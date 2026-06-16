@@ -14,6 +14,7 @@ import type { Sender } from './rest';
 import { M } from '../messages';
 import { parseAdminIds } from '../util';
 import { parseCb } from './components';
+import { boardEmbed } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
 import * as games from '../services/games';
 import { loadStats } from '../services/stats';
@@ -56,7 +57,9 @@ function reply(data: object): Response {
 }
 const pong = () => reply({ type: 1 });
 const ephemeral = (content: string) => reply({ type: 4, data: { content, flags: 64 } });
-const publicMsg = (content: string) => reply({ type: 4, data: { content } });
+// Board-style replies (stats cards) as green embeds — same look as the game boards.
+const publicEmbed = (text: string) => reply({ type: 4, data: { embeds: [boardEmbed(text)] } });
+const ephemeralEmbed = (text: string) => reply({ type: 4, data: { embeds: [boardEmbed(text)], flags: 64 } });
 const modal = (data: object) => reply({ type: 9, data });
 // Type 6 = DEFERRED_UPDATE_MESSAGE: silently acknowledge a component tap (no toast, no
 // loading state). We edit the live board separately over REST.
@@ -129,13 +132,13 @@ async function onCommand(
 
     case 'stats': {
       const stats = await loadStats(repo, channelId);
-      return publicMsg(renderStats(stats, sinceLabel(stats.firstKickoff)));
+      return publicEmbed(renderStats(stats, sinceLabel(stats.firstKickoff)));
     }
 
     case 'eu': {
       const stats = await loadStats(repo, channelId);
       const name = player?.displayName ?? 'Jogador';
-      return ephemeral(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats.totalGames));
+      return ephemeralEmbed(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats.totalGames));
     }
 
     default:

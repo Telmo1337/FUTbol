@@ -9,6 +9,8 @@ const API = 'https://discord.com/api/v10';
 export interface OutMessage {
   content?: string;
   components?: unknown[];
+  /** Rich embeds (the pretty board cards). NOTE: mentions inside embeds never ping. */
+  embeds?: unknown[];
   /**
    * Which mention kinds Discord is allowed to resolve into real pings for THIS message.
    * Defaults to user mentions only. The "come and vote" message opts into `'everyone'`;
@@ -54,6 +56,7 @@ export function createSender(env: Env): Sender {
     async send(channelId, msg) {
       const res = await call(`${API}/channels/${channelId}/messages`, 'POST', {
         content: msg.content ?? '',
+        embeds: msg.embeds ?? [],
         components: msg.components ?? [],
         allowed_mentions: mentionsFor(msg),
       });
@@ -68,6 +71,7 @@ export function createSender(env: Env): Sender {
     async edit(channelId, messageId, msg) {
       const payload: Record<string, unknown> = { allowed_mentions: mentionsFor(msg) };
       if (msg.content !== undefined) payload.content = msg.content;
+      if (msg.embeds !== undefined) payload.embeds = msg.embeds;
       if (msg.components !== undefined) payload.components = msg.components;
       const res = await call(`${API}/channels/${channelId}/messages/${messageId}`, 'PATCH', payload);
       if (!res.ok) console.error('[discord edit]', res.status, await res.text());
