@@ -26,13 +26,13 @@ export interface WeeklyConfig {
 }
 
 /**
- * True during the Sunday-18:00 Lisbon hour. We match the whole hour (any minute), not a
- * single minute, so a skipped/retried tick still fires; the getCurrentGame guard below
- * makes sure only the first tick of that hour actually creates a game.
+ * True from 22:00 onward on Saturday (Lisbon). Matching the whole evening (any minute ≥22h),
+ * not a single minute, means a skipped/retried tick still fires; the getCurrentGame guard
+ * below makes sure only the first qualifying tick actually creates a game.
  */
 export function isWeeklyTriggerWindow(now: number): boolean {
   const p = lisbonParts(now);
-  return p.weekday === WEEKLY_TRIGGER_DOW && p.hour === WEEKLY_TRIGGER_HOUR;
+  return p.weekday === WEEKLY_TRIGGER_DOW && p.hour >= WEEKLY_TRIGGER_HOUR;
 }
 
 export async function maybeCreateWeeklyGame(

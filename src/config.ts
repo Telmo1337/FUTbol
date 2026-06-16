@@ -52,10 +52,10 @@ export const FIELD_CLUB_ID = '5QkuPXdvkISXwFZQyMlB';
 export const FIELD_ID = 'Ia79UGKogA7oNBxp9PNS';
 
 /** When the weekly auto-game fires (Lisbon wall-clock; weekday 1=Mon..7=Sun). */
-export const WEEKLY_TRIGGER_DOW = 7; // Sunday
-export const WEEKLY_TRIGGER_HOUR = 18; // fires on any tick during the 18:xx hour; dedup keeps it to 1
-/** Free-slot search window + shape. Locked with the user: 60-min slots, evenings only, Mon–Sat. */
-export const AVAIL_DAYS_AHEAD = 7;
+export const WEEKLY_TRIGGER_DOW = 6; // Saturday
+export const WEEKLY_TRIGGER_HOUR = 22; // fires from 22:00 on Saturday night; dedup keeps it to 1
+/** Free-slot search window. 8 days so a Saturday-night fire still reaches NEXT Saturday. */
+export const AVAIL_DAYS_AHEAD = 8;
 export const AVAIL_SLOT_MIN = 60;
 export const AVAIL_STEP_MIN = 60;
 export const AVAIL_EARLIEST_HOUR = 18; // only propose kickoffs at/after this Lisbon hour...
