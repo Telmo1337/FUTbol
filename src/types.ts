@@ -19,10 +19,14 @@ export type GameStatus =
   | 'TIEBREAK' // voting closed but tied → waiting for admin to pick
   | 'RSVP_OPEN' // winner locked, members confirming presence
   | 'LOCKED' // RSVP closed, squad frozen
-  | 'PLAYED' // kickoff passed (seam for future stats)
+  | 'CHECKIN_OPEN' // kickoff passed, collecting "Cheguei ✅" until the window closes
+  | 'PLAYED' // window closed, ghosts assigned, stats final
   | 'CANCELLED';
 
 export type RsvpStatus = 'IN' | 'OUT' | 'MAYBE';
+
+/** How a check-in (= player present) got recorded. */
+export type CheckinSource = 'self' | 'admin';
 
 export interface Player {
   tgUserId: number;
@@ -42,9 +46,11 @@ export interface Game {
   capPlayers: number;
   voteDeadline: number; // unix ms UTC
   rsvpCloseAt: number | null; // unix ms UTC, set once winner is locked
+  checkinCloseAt: number | null; // unix ms UTC, set when the check-in window opens (kickoff + window)
   winningSlotId: number | null;
   voteMsgId: number | null;
   rsvpMsgId: number | null;
+  checkinMsgId: number | null;
   flagGameOnSent: boolean;
   flagShortWarnSent: boolean;
   flagNonrespPingSent: boolean;
@@ -80,4 +86,12 @@ export interface Rsvp {
 export interface RsvpView extends Rsvp {
   displayName: string;
   username: string | null;
+}
+
+/** A presence record: this player was at this game. */
+export interface Checkin {
+  gameId: number;
+  tgUserId: number;
+  checkedInAt: number;
+  source: CheckinSource;
 }

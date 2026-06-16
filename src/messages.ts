@@ -3,6 +3,7 @@
 // To add another language later, swap this object behind a tiny selector.
 
 import { esc } from './util';
+import { MIN_GAMES_TO_RANK } from './config';
 
 export const M = {
   start:
@@ -17,6 +18,8 @@ export const M = {
     '/jogo — ver o jogo atual\n' +
     '/fecharvotacao — fechar já a votação <i>(só admin)</i>\n' +
     '/cancelar — cancelar o jogo atual <i>(só admin)</i>\n' +
+    '/stats — ranking de presenças e fiabilidade 📊\n' +
+    '/eu — as tuas estatísticas 📇\n' +
     '/euquem — ver o teu ID de Telegram\n' +
     '/ajuda — esta mensagem',
 
@@ -113,6 +116,64 @@ export const M = {
     rsvpClosed: 'As inscrições já fecharam.',
     onlyAdmin: 'Só o admin pode escolher.',
     tieResolved: 'Horário escolhido ✅',
+    checkinDone: 'Boa! Ficaste registado ✅',
+    checkinAlready: 'Já estavas registado ✅',
+    checkinClosed: 'O check-in já fechou.',
+    checkinNotInList: 'Não estavas na lista deste jogo 🤔',
+    ghostCleared: 'Corrigido — já não é fantasma ✅',
     error: 'Algo correu mal 😬',
+  },
+
+  // ---- Check-in board (kickoff → +window): "Cheguei ✅" ----
+  checkin: {
+    title: (when: string) => `🟢 <b>Hora do jogo — ${when}</b>`,
+    ping: (mentions: string) => `📣 ${mentions}\nChegaram ao campo? Carreguem em <b>Cheguei</b> 👇`,
+    button: '✅ Cheguei',
+    present: (n: number) => `✅ <b>Já cá estão (${n})</b>`,
+    pending: (n: number) => `⏳ <b>Ainda por confirmar (${n})</b>`,
+    empty: '— ainda ninguém —',
+    closesAt: (when: string) => `⏳ Check-in fecha ${when}. Quem não carregar fica fantasma 👻`,
+  },
+
+  // ---- Post-game recap (auto-posted when the window closes) ----
+  recap: {
+    title: (when: string) => `🏁 <b>Resumo — ${when}</b>`,
+    played: (n: number) => `👟 <b>Jogaram (${n})</b>`,
+    ghosts: (n: number) => `👻 <b>Fantasmas (${n})</b>`,
+    noGhosts: '👏 Zero fantasmas esta semana — toda a gente apareceu!',
+    clearHint: '<i>Admin: alguém jogou mas esqueceu-se de carregar? Toca no nome para corrigir 👇</i>',
+    footer: '📊 Ranking completo em /stats',
+    ghostButton: (name: string) => `✅ ${name} jogou`,
+    empty: '— ninguém —',
+  },
+
+  // ---- /stats group leaderboard ----
+  stats: {
+    title: '📊 <b>Estatísticas FUTbol</b>',
+    since: (when: string) => `<i>desde ${when}</i>`,
+    totalGames: (n: number) => `⚽ ${n} ${n === 1 ? 'jogo jogado' : 'jogos jogados'}`,
+    none: 'Ainda não há jogos jogados. As estatísticas aparecem depois do primeiro jogo. ⚽',
+    reliableTitle: `🏅 <b>Mais fiáveis</b> <i>(mín. ${MIN_GAMES_TO_RANK} jogos)</i>`,
+    reliableLine: (pct: number, shown: number, total: number) => `${pct}% <i>(${shown}/${total})</i>`,
+    reliableEmpty: '<i>ainda ninguém com jogos suficientes — a aquecer 🔥</i>',
+    appearancesTitle: '👟 <b>Mais presenças</b>',
+    appearancesLine: (n: number) => `${n} ${n === 1 ? 'jogo' : 'jogos'}`,
+    streakTitle: '🔥 <b>Em sequência</b>',
+    streakLine: (n: number) => `${n} seguidos`,
+    ghostsTitle: '👻 <b>Mais fantasma</b>',
+    ghostsLine: (n: number) => `${n} ${n === 1 ? 'falta' : 'faltas'}`,
+    ghostsEmpty: '<i>sem fantasmas — que grupo de confiança! 👏</i>',
+  },
+
+  // ---- /eu personal card ----
+  eu: {
+    title: (name: string) => `📇 <b>${name}</b>`,
+    appearances: (n: number) => `👟 Presenças: <b>${n}</b>`,
+    reliability: (pct: number, shown: number, total: number) => `🏅 Fiabilidade: <b>${pct}%</b> <i>(${shown}/${total})</i>`,
+    reliabilityWarming: (missing: number) =>
+      `🏅 Fiabilidade: a aquecer 🔥 <i>(faltam ${missing} ${missing === 1 ? 'jogo' : 'jogos'} p/ entrar no ranking)</i>`,
+    streak: (cur: number, best: number) => `🔥 Sequência: <b>${cur}</b> <i>(melhor: ${best})</i>`,
+    ghosts: (n: number) => `👻 Fantasma: <b>${n}</b> ${n === 1 ? 'vez' : 'vezes'}`,
+    none: 'Ainda não tens jogos registados. Aparece num jogo e carrega em <b>Cheguei ✅</b>.',
   },
 };

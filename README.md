@@ -12,6 +12,8 @@ are handled for you. **European Portuguese (pt-PT)**, runs for **€0**.
 3. **✅ Presenças** — o bot abre as inscrições: `✅ Vou / ❌ Não vou / 🤔 Talvez`.
 4. **📋 Lista + lista de espera** — os primeiros até ao máximo ficam confirmados; o resto vai para a lista de espera e **sobe automaticamente** quando alguém desiste.
 5. **🔔 Avisos automáticos** — "jogo confirmado", "faltam X", pings a quem não respondeu, e fecho das inscrições antes do jogo.
+6. **🟢 Check-in (à hora do jogo)** — o bot abre um quadro `✅ Cheguei`. Quem aparece carrega; quem disse "Vou" e não carrega fica **fantasma 👻**. Os suplentes também podem carregar e contam presença. 5h depois fecha sozinho e sai um **resumo** (com botões para o admin corrigir falsos fantasmas).
+7. **📊 Estatísticas** — `/stats` mostra os rankings (🏅 fiabilidade, 👟 presenças, 🔥 sequência, 👻 fantasma) e `/eu` mostra as tuas.
 
 ## Comandos
 
@@ -21,6 +23,8 @@ are handled for you. **European Portuguese (pt-PT)**, runs for **€0**.
 | `/jogo` | Ver / re-mostrar o jogo atual |
 | `/fecharvotacao` | Fechar já a votação *(só admin)* |
 | `/cancelar` | Cancelar o jogo atual *(só admin)* |
+| `/stats` | Ranking de presenças e fiabilidade 📊 |
+| `/eu` | As tuas estatísticas 📇 |
 | `/euquem` | Ver o teu ID de Telegram |
 | `/ajuda` | Ajuda |
 
@@ -51,6 +55,8 @@ dia: 20/06 18:00
    jogo - Ver o jogo atual
    fecharvotacao - Fechar já a votação (admin)
    cancelar - Cancelar o jogo atual (admin)
+   stats - Ranking de presenças e fiabilidade
+   eu - As minhas estatísticas
    euquem - Ver o meu ID de Telegram
    ajuda - Ajuda
    ```
@@ -148,9 +154,9 @@ migrations/       SQL aplicado ao D1 (local e remoto)
 scripts/selftest.ts
 ```
 
-## 🗺️ A seguir (já pensado, sem reescrever o v1)
+## 🗺️ A seguir (já pensado, sem reescrever o que está feito)
 
-- **Estatísticas** automáticas: presenças, sequências, "o mais fiável", fantasma 👻 (o estado `PLAYED` e o histórico de presenças já ficam guardados).
-- **Vitórias/derrotas + MVP** com um toque depois do jogo.
+- ✅ **v2 — Estatísticas** automáticas: presenças, fiabilidade, sequências, "o mais fiável" 🏅, fantasma 👻. *(feito — ver `docs/v2-plan.md`)*
+- **v3 — Vitórias/derrotas + MVP** com um toque depois do jogo.
 - **Repartir a conta** do campo (quem pagou / quem deve).
 - **Painel web** de estatísticas (Cloudflare Pages + Telegram Mini App, abre dentro do Telegram, sem login).

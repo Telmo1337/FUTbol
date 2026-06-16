@@ -1,9 +1,16 @@
 // Repository: the ONLY module that runs SQL. Everything else calls these methods.
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { createDb } from './client';
-import { players, games, candidateSlots, votes, rsvps } from './schema';
+import { players, games, candidateSlots, votes, rsvps, checkins } from './schema';
 import { GAME_STATUSES_ACTIVE } from '../config';
-import type { Game, GameStatus, RsvpStatus, RsvpView, Slot, Vote } from '../types';
+import type { Checkin, CheckinSource, Game, GameStatus, RsvpStatus, RsvpView, Slot, Vote } from '../types';
+
+/** A finished game with its kickoff time, for stats. */
+export interface PlayedGame {
+  id: number;
+  capPlayers: number;
+  kickoffAt: number;
+}
 
 export type NudgeFlag = 'GAME_ON' | 'SHORT_WARN' | 'NONRESP_PING';
 
@@ -99,6 +106,19 @@ export function createRepo(d1: D1Database) {
         .set({ status: 'RSVP_OPEN', winningSlotId: slotId, rsvpCloseAt, updatedAt: now })
         .where(eq(games.id, id))
         .run();
+    },
+
+    /** LOCKED → CHECKIN_OPEN: kickoff has passed, start collecting "Cheguei ✅". */
+    async openCheckin(id: number, checkinCloseAt: number, now: number): Promise<void> {
+      await db
+        .update(games)
+        .set({ status: 'CHECKIN_OPEN', checkinCloseAt, updatedAt: now })
+        .where(eq(games.id, id))
+        .run();
+    },
+
+    async setCheckinMsg(id: number, msgId: number, now: number): Promise<void> {
+      await db.update(games).set({ checkinMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
     },
 
     async setNudgeFlag(id: number, flag: NudgeFlag, now: number): Promise<void> {
@@ -199,6 +219,49 @@ export function createRepo(d1: D1Database) {
         sql`UPDATE rsvps SET promoted_notified_at = ${now} WHERE game_id = ${gameId} AND tg_user_id = ${tgUserId} AND promoted_notified_at IS NULL`,
       )) as unknown as D1Result;
       return (res.meta?.changes ?? 0) > 0;
+    },
+
+    // ---------- checkins (attendance) ----------
+    /** Record a player as present. Returns true only if this call added a new row (vs already present). */
+    async addCheckin(gameId: number, tgUserId: number, source: CheckinSource, now: number): Promise<boolean> {
+      const where = and(eq(checkins.gameId, gameId), eq(checkins.tgUserId, tgUserId));
+      const existing = await db.select().from(checkins).where(where).get();
+      if (existing) return false;
+      await db.insert(checkins).values({ gameId, tgUserId, checkedInAt: now, source }).run();
+      return true;
+    },
+
+    async getCheckins(gameId: number): Promise<Checkin[]> {
+      return db.select().from(checkins).where(eq(checkins.gameId, gameId));
+    },
+
+    // ---------- stats (read-side, all-time per chat) ----------
+    /** Finished games (with kickoff time) for a chat, oldest first. */
+    async getPlayedGames(chatId: number): Promise<PlayedGame[]> {
+      return db
+        .select({ id: games.id, capPlayers: games.capPlayers, kickoffAt: candidateSlots.kickoffAt })
+        .from(games)
+        .innerJoin(candidateSlots, eq(candidateSlots.id, games.winningSlotId))
+        .where(and(eq(games.chatId, chatId), eq(games.status, 'PLAYED')))
+        .orderBy(candidateSlots.kickoffAt);
+    },
+
+    async getRsvpsForGames(
+      gameIds: number[],
+    ): Promise<{ gameId: number; tgUserId: number; status: RsvpStatus; rankAt: number }[]> {
+      if (gameIds.length === 0) return [];
+      return db
+        .select({ gameId: rsvps.gameId, tgUserId: rsvps.tgUserId, status: rsvps.status, rankAt: rsvps.rankAt })
+        .from(rsvps)
+        .where(inArray(rsvps.gameId, gameIds));
+    },
+
+    async getCheckinsForGames(gameIds: number[]): Promise<{ gameId: number; tgUserId: number }[]> {
+      if (gameIds.length === 0) return [];
+      return db
+        .select({ gameId: checkins.gameId, tgUserId: checkins.tgUserId })
+        .from(checkins)
+        .where(inArray(checkins.gameId, gameIds));
     },
   };
 }

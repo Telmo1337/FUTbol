@@ -6,13 +6,15 @@ import type { Repo } from '../db/repo';
 import type { Game, RsvpStatus, Slot } from '../types';
 import { M } from '../messages';
 import { esc, mention } from '../util';
-import { RSVP_CLOSE_BEFORE_KICKOFF_MS } from '../config';
+import { CHECKIN_WINDOW_MS, RSVP_CLOSE_BEFORE_KICKOFF_MS } from '../config';
 import { countVoters, pickWinner, tallyVotes } from '../core/voting';
 import { confirmedIds, splitSquad } from '../core/rsvp';
 import { dueNudges } from '../core/nudges';
 import { renderVoteMessage, renderVoteResult, renderVoteTie } from '../render/vote-message';
 import { renderRsvpMessage } from '../render/rsvp-message';
-import { rsvpKeyboard, tieKeyboard, voteKeyboard } from '../render/keyboards';
+import { renderCheckinBoard } from '../render/checkin-message';
+import { renderRecap } from '../render/recap-message';
+import { checkinKeyboard, recapKeyboard, rsvpKeyboard, tieKeyboard, voteKeyboard } from '../render/keyboards';
 
 const NO_PREVIEW = { is_disabled: true } as const;
 const MAX_PING = 15;
@@ -42,6 +44,22 @@ async function removeKeyboard(api: Api, chatId: number, msgId: number) {
   } catch {
     /* ignore */
   }
+}
+
+// Present (checked-in, incl. subs) vs the confirmed squad who are still absent.
+// During the window the absent set is "pending"; after it closes the same set are the 👻 ghosts.
+async function attendanceView(repo: Repo, game: Game) {
+  const winner = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
+  const rsvps = await repo.getRsvps(game.id);
+  const split = splitSquad(rsvps, game.capPlayers);
+  const rows = await repo.getCheckins(game.id);
+  const presentIds = new Set(rows.map((c) => c.tgUserId));
+  const nameById = new Map(rsvps.map((r) => [r.tgUserId, r.displayName] as const));
+  const present = rows.map((c) => ({ tgUserId: c.tgUserId, displayName: nameById.get(c.tgUserId) ?? 'Jogador' }));
+  const confirmedAbsent = split.confirmed
+    .filter((p) => !presentIds.has(p.tgUserId))
+    .map((p) => ({ tgUserId: p.tgUserId, displayName: p.displayName }));
+  return { winnerLabel: winner?.label ?? '', present, confirmedAbsent };
 }
 
 // ---------- create ----------
@@ -290,5 +308,95 @@ export async function repost(api: Api, repo: Repo, game: Game, now: number): Pro
   } else if (game.status === 'TIEBREAK') {
     const slots = await repo.getSlots(game.id);
     await send(api, game.chatId, M.tieAdminPrompt, tieKeyboard(game.id, slots));
+  } else if (game.status === 'CHECKIN_OPEN') {
+    const v = await attendanceView(repo, game);
+    if (game.checkinMsgId) await removeKeyboard(api, game.chatId, game.checkinMsgId);
+    const text = renderCheckinBoard({
+      winnerLabel: v.winnerLabel,
+      present: v.present,
+      pending: v.confirmedAbsent,
+      checkinCloseAt: game.checkinCloseAt,
+    });
+    const msg = await send(api, game.chatId, text, checkinKeyboard(game.id));
+    await repo.setCheckinMsg(game.id, msg.message_id, now);
   }
+}
+
+// ---------- check-in (attendance) ----------
+// LOCKED → CHECKIN_OPEN: kickoff passed. Ping the squad and post the "Cheguei ✅" board.
+export async function openCheckin(api: Api, repo: Repo, game: Game, now: number): Promise<void> {
+  if (game.status !== 'LOCKED') return;
+  const winner = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
+  if (!winner) return;
+  const closeAt = winner.kickoffAt + CHECKIN_WINDOW_MS;
+  await repo.openCheckin(game.id, closeAt, now);
+
+  const split = splitSquad(await repo.getRsvps(game.id), game.capPlayers);
+  if (split.confirmed.length > 0) {
+    await send(api, game.chatId, M.checkin.ping(split.confirmed.map(mention).join(', ')));
+  }
+  const text = renderCheckinBoard({
+    winnerLabel: winner.label,
+    present: [],
+    pending: split.confirmed.map((p) => ({ displayName: p.displayName })),
+    checkinCloseAt: closeAt,
+  });
+  const msg = await send(api, game.chatId, text, checkinKeyboard(game.id));
+  await repo.setCheckinMsg(game.id, msg.message_id, now);
+}
+
+// A player taps "Cheguei". Confirmed squad OR a sub off the waitlist (anyone who said IN) may check in.
+export async function handleCheckin(api: Api, repo: Repo, gameId: number, userId: number, now: number): Promise<string> {
+  const game = await repo.getGame(gameId);
+  if (!game || game.status !== 'CHECKIN_OPEN') return M.cb.checkinClosed;
+  const me = (await repo.getRsvps(gameId)).find((r) => r.tgUserId === userId);
+  if (!me || me.status !== 'IN') return M.cb.checkinNotInList;
+  const added = await repo.addCheckin(gameId, userId, 'self', now);
+  await rerenderCheckin(api, repo, game);
+  return added ? M.cb.checkinDone : M.cb.checkinAlready;
+}
+
+async function rerenderCheckin(api: Api, repo: Repo, game: Game): Promise<void> {
+  if (!game.checkinMsgId) return;
+  const v = await attendanceView(repo, game);
+  const text = renderCheckinBoard({
+    winnerLabel: v.winnerLabel,
+    present: v.present,
+    pending: v.confirmedAbsent,
+    checkinCloseAt: game.checkinCloseAt,
+  });
+  await safeEditText(api, game.chatId, game.checkinMsgId, text, checkinKeyboard(game.id));
+}
+
+// CHECKIN_OPEN → PLAYED: window closed. Lock the board, assign ghosts, post the recap.
+export async function closeCheckin(api: Api, repo: Repo, game: Game, now: number): Promise<void> {
+  if (game.status !== 'CHECKIN_OPEN') return;
+  await repo.setStatus(game.id, 'PLAYED', now);
+  if (game.checkinMsgId) await removeKeyboard(api, game.chatId, game.checkinMsgId);
+  await postRecap(api, repo, { ...game, status: 'PLAYED' });
+}
+
+async function postRecap(api: Api, repo: Repo, game: Game): Promise<void> {
+  const v = await attendanceView(repo, game);
+  const text = renderRecap({ winnerLabel: v.winnerLabel, present: v.present, ghosts: v.confirmedAbsent });
+  await send(api, game.chatId, text, recapKeyboard(game.id, v.confirmedAbsent));
+}
+
+// Admin taps "X jogou" on the recap to clear a false ghost. Edits that recap message in place.
+export async function clearGhost(
+  api: Api,
+  repo: Repo,
+  gameId: number,
+  userId: number,
+  chatId: number,
+  msgId: number,
+  now: number,
+): Promise<boolean> {
+  const game = await repo.getGame(gameId);
+  if (!game) return false;
+  await repo.addCheckin(gameId, userId, 'admin', now);
+  const v = await attendanceView(repo, game);
+  const text = renderRecap({ winnerLabel: v.winnerLabel, present: v.present, ghosts: v.confirmedAbsent });
+  await safeEditText(api, chatId, msgId, text, recapKeyboard(gameId, v.confirmedAbsent));
+  return true;
 }

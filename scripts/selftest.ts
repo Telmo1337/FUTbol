@@ -9,6 +9,8 @@ import * as games from '../src/services/games';
 import { confirmedIds, splitSquad } from '../src/core/rsvp';
 import { pickWinner } from '../src/core/voting';
 import { parseDateTime, formatWhen } from '../src/core/time';
+import { loadStats } from '../src/services/stats';
+import { computeStats, statFor, topByGhosts, topByReliability } from '../src/core/stats';
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -44,7 +46,9 @@ const proxy = await getPlatformProxy<Env>();
 const repo = createRepo(proxy.env.DB);
 
 // --- End-to-end weekly loop ---
-const chatId = -100123456 - msgId; // unique-ish per run
+// Unique per run: the local D1 persists between runs, and the all-time /stats checks
+// below read every PLAYED game for this chat — a fixed id would let runs bleed together.
+const chatId = -Date.now();
 const DAY = 86_400_000;
 const slotA = NOW + 2 * DAY;
 const slotB = NOW + 3 * DAY;
@@ -106,6 +110,72 @@ await games.closeRsvp(fakeApi, repo, game, game.rsvpCloseAt! + 1);
 game = (await repo.getGame(game.id))!;
 check('RSVP closed → LOCKED', game.status === 'LOCKED');
 check('final squad announced', anySentIncludes('Equipa final'));
+// Confirmed squad now = users 2,3,4 (user 1 dropped out before close).
+
+// --- v2: check-in window → ghosts → admin clear ---
+await games.openCheckin(fakeApi, repo, game, slotB + 1); // kickoff reached
+game = (await repo.getGame(game.id))!;
+check('LOCKED → CHECKIN_OPEN at kickoff', game.status === 'CHECKIN_OPEN' && game.checkinMsgId != null);
+check('check-in board posted', anySentIncludes('Hora do jogo'));
+
+// users 2 and 3 tap Cheguei; user 4 does NOT (will be a ghost)
+await games.handleCheckin(fakeApi, repo, game.id, 2, slotB + 100);
+await games.handleCheckin(fakeApi, repo, game.id, 3, slotB + 150);
+check('two self check-ins recorded', (await repo.getCheckins(game.id)).length === 2);
+await games.handleCheckin(fakeApi, repo, game.id, 2, slotB + 200); // repeat tap
+check('repeat check-in does not duplicate', (await repo.getCheckins(game.id)).length === 2);
+
+// close the window → PLAYED + recap with the ghost
+game = (await repo.getGame(game.id))!;
+await games.closeCheckin(fakeApi, repo, game, game.checkinCloseAt! + 1);
+game = (await repo.getGame(game.id))!;
+check('CHECKIN_OPEN → PLAYED after window', game.status === 'PLAYED');
+check('recap names the ghost', anySentIncludes('Fantasmas'));
+
+let s1 = await loadStats(repo, chatId);
+check('stats: exactly 1 game played', s1.totalGames === 1);
+check('stats: user 2 has an appearance', statFor(s1, 2, 'u2').appearances === 1 && statFor(s1, 2, 'u2').ghosts === 0);
+check('stats: user 4 is a ghost (confirmed, no-show)', statFor(s1, 4, 'u4').ghosts === 1 && statFor(s1, 4, 'u4').appearances === 0);
+
+// admin clears the false ghost → user 4 counts as present
+await games.clearGhost(fakeApi, repo, game.id, 4, chatId, 1, game.checkinCloseAt! + 2);
+const s2 = await loadStats(repo, chatId);
+check('stats: admin clear turns ghost into appearance', statFor(s2, 4, 'u4').ghosts === 0 && statFor(s2, 4, 'u4').appearances === 1);
+
+// --- pure computeStats: subs, reliability %, streak reset ---
+// cap = 1, so each game's confirmed squad is the single earliest IN.
+const sStats = computeStats({
+  games: [
+    { id: 1, capPlayers: 1, kickoffAt: 1000 },
+    { id: 2, capPlayers: 1, kickoffAt: 2000 },
+    { id: 3, capPlayers: 1, kickoffAt: 3000 },
+    { id: 4, capPlayers: 1, kickoffAt: 4000 },
+  ],
+  rsvps: [
+    { gameId: 1, tgUserId: 10, status: 'IN', rankAt: 1 }, // p10 confirmed
+    { gameId: 1, tgUserId: 20, status: 'IN', rankAt: 2 }, // p20 waitlisted sub
+    { gameId: 2, tgUserId: 10, status: 'IN', rankAt: 1 },
+    { gameId: 3, tgUserId: 10, status: 'IN', rankAt: 1 },
+    { gameId: 4, tgUserId: 10, status: 'IN', rankAt: 1 }, // p10 confirmed but absent below
+    { gameId: 4, tgUserId: 30, status: 'IN', rankAt: 2 }, // p30 waitlisted sub
+  ],
+  presentKeys: new Set(['1:10', '2:10', '3:10', '1:20', '4:30']), // p10 absent game 4
+  names: new Map([
+    [10, 'Ana'],
+    [20, 'Bea'],
+    [30, 'Caz'],
+  ]),
+});
+const p10 = statFor(sStats, 10, 'Ana');
+check('computeStats: p10 appearances 3 / confirmedFor 4', p10.appearances === 3 && p10.confirmedFor === 4);
+check('computeStats: p10 reliability 75%', p10.reliabilityPct === 75);
+check('computeStats: p10 one ghost (missed game 4)', p10.ghosts === 1);
+check('computeStats: p10 streak reset (current 0, best 3)', p10.currentStreak === 0 && p10.bestStreak === 3);
+const p20 = statFor(sStats, 20, 'Bea');
+check('computeStats: sub earns appearance, no reliability', p20.appearances === 1 && p20.confirmedFor === 0 && p20.reliabilityPct === null);
+check('computeStats: late sub current streak 1', statFor(sStats, 30, 'Caz').currentStreak === 1);
+check('computeStats: reliability board only ranks >= 3 games', topByReliability(sStats, 5).every((p) => p.confirmedFor >= 3));
+check('computeStats: ghost board includes p10', topByGhosts(sStats, 5).some((p) => p.tgUserId === 10));
 
 console.log(`\n${failures === 0 ? '🎉 All checks passed' : `💥 ${failures} check(s) failed`}`);
 await proxy.dispose();

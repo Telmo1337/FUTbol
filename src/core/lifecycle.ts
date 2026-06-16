@@ -3,7 +3,8 @@
 //   VOTING ──deadline, clear winner──▶ RSVP_OPEN
 //   VOTING ──deadline, tie───────────▶ TIEBREAK ──admin picks──▶ RSVP_OPEN
 //   RSVP_OPEN ──rsvp_close_at────────▶ LOCKED   (or CANCELLED if < min players)
-//   LOCKED ──kickoff_at──────────────▶ PLAYED   (seam for future stats)
+//   LOCKED ──kickoff_at──────────────▶ CHECKIN_OPEN  (bot posts the "Cheguei ✅" board)
+//   CHECKIN_OPEN ──checkin_close_at──▶ PLAYED         (ghosts assigned, recap posted)
 //   any (non-terminal) ──/cancelar───▶ CANCELLED
 //
 // E = event-driven (a tap or command). T = time-driven (the tick reads now vs deadlines).
@@ -17,4 +18,8 @@ export function isVotingExpired(game: Game, now: number): boolean {
 
 export function isRsvpExpired(game: Game, now: number): boolean {
   return game.status === 'RSVP_OPEN' && game.rsvpCloseAt != null && now >= game.rsvpCloseAt;
+}
+
+export function isCheckinExpired(game: Game, now: number): boolean {
+  return game.status === 'CHECKIN_OPEN' && game.checkinCloseAt != null && now >= game.checkinCloseAt;
 }
