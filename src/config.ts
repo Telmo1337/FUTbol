@@ -62,4 +62,6 @@ export const AVAIL_LATEST_HOUR = 24;
 export const AVAIL_MAX_SLOTS = 25; // Discord renders at most 25 buttons (5×5)
 /** Which `workingHours.day` value means Sunday in Field's data. VERIFY with `npm run print:avail`. */
 export const FIELD_DAY_OF_SUNDAY = 7;
+/** Weekdays the group never plays (ISO 1=Mon..7=Sun): Friday + Sunday → never proposed. */
+export const WEEKLY_EXCLUDED_DOWS = [5, 7];
 export const WEEKLY_LOCATION_NOTE = 'IPVC ESE - campo 7x7';

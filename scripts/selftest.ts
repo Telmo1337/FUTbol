@@ -49,6 +49,7 @@ const avFree = computeFreeSlots({
   workingHours: [
     { day: 1, start: '16:00', end: '20:00' }, // Mon: 16/17 dropped (<18h), 18/19 kept
     { day: 2, start: '18:00', end: '20:00' }, // Tue: 18 booked below, 19 kept
+    { day: 5, start: '18:00', end: '20:00' }, // Fri: excluded entirely
     { day: 6, start: '18:00', end: '20:00' }, // Sat: 18/19 kept
     { day: 7, start: '18:00', end: '20:00' }, // Sun: excluded entirely
   ],
@@ -59,10 +60,14 @@ const avFree = computeFreeSlots({
   stepMin: 60,
   earliestHour: 18,
   latestHour: 24,
+  excludedDows: [5, 7],
   fieldDayOfSunday: 7,
   maxSlots: 25,
 });
-check('availability: never proposes Sunday', avFree.every((s) => lisbonParts(s.kickoffAt).weekday !== 7));
+check(
+  'availability: never proposes Friday or Sunday',
+  avFree.every((s) => ![5, 7].includes(lisbonParts(s.kickoffAt).weekday)),
+);
 check('availability: respects the >=18h filter', avFree.every((s) => lisbonParts(s.kickoffAt).hour >= 18));
 check('availability: drops the booked Tue 18:00 slot', !avFree.some((s) => s.kickoffAt === lisbonToUtc(2026, 6, 16, 18, 0)));
 check('availability: keeps the free Tue 19:00 slot', avFree.some((s) => s.kickoffAt === lisbonToUtc(2026, 6, 16, 19, 0)));
