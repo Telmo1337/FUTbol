@@ -92,7 +92,7 @@ export async function createGame(
   const slots = await repo.getSlots(gameId);
   // Ping the group once, only at "come and vote" — re-renders use the plain board.
   // This is the single message allowed to resolve @everyone (the group ping).
-  const text = `${GROUP_PING}\n${renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0)}`;
+  const text = `${GROUP_PING}\n${renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0, new Map())}`;
   const msgId = await send(api, input.chatId, text, voteComponents(gameId, slots), ['users', 'everyone']);
   await repo.setVoteMsg(gameId, msgId, input.now);
 }
@@ -105,19 +105,36 @@ export async function handleVote(
   slotId: number,
   userId: string,
   now: number,
-): Promise<string> {
+): Promise<void> {
   const game = await repo.getGame(gameId);
-  if (!game || game.status !== 'VOTING') return M.cb.votingClosed;
-  const res = await repo.toggleVote(gameId, slotId, userId, now);
+  if (!game || game.status !== 'VOTING') return;
+  await repo.toggleVote(gameId, slotId, userId, now);
   await rerenderVote(api, repo, game);
-  return res === 'added' ? M.cb.voteAdded : M.cb.voteRemoved;
+}
+
+/** Group voter display names by slot id (for the "who voted what" board). */
+function groupVoters(rows: { slotId: number; displayName: string }[]): Map<number, string[]> {
+  const m = new Map<number, string[]>();
+  for (const r of rows) {
+    const arr = m.get(r.slotId);
+    if (arr) arr.push(r.displayName);
+    else m.set(r.slotId, [r.displayName]);
+  }
+  return m;
 }
 
 async function rerenderVote(api: Sender, repo: Repo, game: Game): Promise<void> {
   if (!game.voteMsgId) return;
   const slots = await repo.getSlots(game.id);
   const votes = await repo.getVotes(game.id);
-  const text = renderVoteMessage(game.locationNote, tallyVotes(slots, votes), game.voteDeadline, countVoters(votes));
+  const named = await repo.getVotesWithNames(game.id);
+  const text = renderVoteMessage(
+    game.locationNote,
+    tallyVotes(slots, votes),
+    game.voteDeadline,
+    countVoters(votes),
+    groupVoters(named),
+  );
   await safeEditText(api, game.chatId, game.voteMsgId, text, voteComponents(game.id, slots));
 }
 
@@ -131,7 +148,9 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
   } else {
     await repo.setStatus(game.id, 'TIEBREAK', now);
     if (game.voteMsgId) {
-      await safeEditText(api, game.chatId, game.voteMsgId, renderVoteTie(game.locationNote, tallyVotes(slots, votes)));
+      const named = await repo.getVotesWithNames(game.id);
+      const tieText = renderVoteTie(game.locationNote, tallyVotes(slots, votes), groupVoters(named));
+      await safeEditText(api, game.chatId, game.voteMsgId, tieText);
       await removeKeyboard(api, game.chatId, game.voteMsgId);
     }
     await send(api, game.chatId, M.tieAdminPrompt, tieComponents(game.id, tied.length ? tied : slots));
@@ -287,7 +306,14 @@ export async function repost(api: Sender, repo: Repo, game: Game, now: number): 
   if (game.status === 'VOTING') {
     const slots = await repo.getSlots(game.id);
     const votes = await repo.getVotes(game.id);
-    const text = renderVoteMessage(game.locationNote, tallyVotes(slots, votes), game.voteDeadline, countVoters(votes));
+    const named = await repo.getVotesWithNames(game.id);
+    const text = renderVoteMessage(
+      game.locationNote,
+      tallyVotes(slots, votes),
+      game.voteDeadline,
+      countVoters(votes),
+      groupVoters(named),
+    );
     if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
     const msgId = await send(api, game.chatId, text, voteComponents(game.id, slots));
     await repo.setVoteMsg(game.id, msgId, now);

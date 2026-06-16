@@ -8,7 +8,8 @@ import type { Sender } from '../src/discord/rest';
 import { createRepo } from '../src/db/repo';
 import * as games from '../src/services/games';
 import { confirmedIds, splitSquad } from '../src/core/rsvp';
-import { pickWinner } from '../src/core/voting';
+import { pickWinner, tallyVotes } from '../src/core/voting';
+import { renderVoteMessage } from '../src/render/vote-message';
 import { parseDateTime, formatWhen, lisbonToUtc, lisbonParts } from '../src/core/time';
 import { computeFreeSlots } from '../src/core/availability';
 import { isWeeklyTriggerWindow, maybeCreateWeeklyGame } from '../src/services/weekly';
@@ -41,6 +42,17 @@ const NOW = Date.UTC(2026, 5, 15, 12, 0, 0); // 2026-06-15 12:00 UTC
 check('parseDateTime parses "20/06 18:00"', parseDateTime('20/06 18:00', NOW) !== null);
 check('parseDateTime rejects garbage', parseDateTime('amanhã às tantas', NOW) === null);
 check('formatWhen produces a label', /\d{2}:\d{2}/.test(formatWhen(NOW)));
+
+// vote board shows who voted what (names listed under each slot)
+const demoSlots = [{ id: 7, gameId: 1, kickoffAt: NOW, label: 'Sáb 18:00', sortOrder: 0 }];
+const demoBoard = renderVoteMessage(
+  'Campo',
+  tallyVotes(demoSlots, [{ gameId: 1, slotId: 7, tgUserId: 'a', createdAt: NOW }]),
+  NOW,
+  1,
+  new Map([[7, ['Telmo', 'Ana']]]),
+);
+check('vote board lists voter names under a slot', demoBoard.includes('Telmo') && demoBoard.includes('Ana'));
 
 // --- pure computeFreeSlots: Sunday exclusion, >=18h filter, booked-slot subtraction ---
 // NOW = Mon 2026-06-15. Field uses day 1=Mon..7=Sun (fieldDayOfSunday=7).
@@ -121,6 +133,11 @@ await games.handleVote(sender, repo, game.id, b.id, '2', NOW);
 await games.handleVote(sender, repo, game.id, b.id, '3', NOW);
 await games.handleVote(sender, repo, game.id, a.id, '1', NOW);
 check('pickWinner picks slot B', pickWinner(slots, await repo.getVotes(game.id)).winner?.id === b.id);
+const namedVotes = await repo.getVotesWithNames(game.id);
+check(
+  'getVotesWithNames joins votes to names',
+  namedVotes.length === 4 && namedVotes.filter((v) => v.slotId === b.id).length === 3,
+);
 
 await games.closeVoting(sender, repo, game, NOW + DAY + 1);
 game = (await repo.getGame(game.id))!;
