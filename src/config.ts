@@ -6,7 +6,8 @@ export const LOCALE = 'pt-PT';
 const HOUR = 3_600_000;
 
 /** Defaults when the admin doesn't specify min/cap in /novojogo. */
-export const DEFAULT_MIN_PLAYERS = 10;
+// Futebol-7 = 14 on the pitch, so the game only confirms with a full 14 (min == cap).
+export const DEFAULT_MIN_PLAYERS = 14;
 export const DEFAULT_CAP_PLAYERS = 14;
 
 /** RSVP closes this long before kickoff. */
