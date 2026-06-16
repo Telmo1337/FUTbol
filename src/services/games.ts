@@ -20,11 +20,12 @@ import {
   tieComponents,
   voteComponents,
 } from '../discord/components';
+import { boardEmbed } from '../discord/embeds';
 
 const MAX_PING = 15;
 
 // ---------- Discord send/edit helpers ----------
-/** Post a message; returns the new message id. */
+/** Post a plain-text announcement/ping — mentions HERE do notify (unlike inside embeds). */
 async function send(
   api: Sender,
   chatId: string,
@@ -35,12 +36,29 @@ async function send(
   return api.send(chatId, { content: text, components: components ?? [], allowedMentions });
 }
 
-/** Edit a board's text (and buttons) in place. */
-async function safeEditText(api: Sender, chatId: string, msgId: string, text: string, components?: unknown[]) {
-  await api.edit(chatId, msgId, { content: text, components: components ?? [] });
+/** Post a board as a green embed. `opts.content` carries any real ping text (e.g. @everyone),
+ *  because mentions inside an embed never notify. Returns the new message id. */
+async function sendBoard(
+  api: Sender,
+  chatId: string,
+  text: string,
+  components?: unknown[],
+  opts?: { content?: string; allowedMentions?: ('users' | 'everyone')[] },
+): Promise<string> {
+  return api.send(chatId, {
+    content: opts?.content,
+    embeds: [boardEmbed(text)],
+    components: components ?? [],
+    allowedMentions: opts?.allowedMentions,
+  });
 }
 
-/** Strip the buttons off a message, leaving its text untouched. */
+/** Edit a board's embed (and buttons) in place, clearing any leftover ping content. */
+async function editBoard(api: Sender, chatId: string, msgId: string, text: string, components?: unknown[]) {
+  await api.edit(chatId, msgId, { content: '', embeds: [boardEmbed(text)], components: components ?? [] });
+}
+
+/** Strip the buttons off a message, leaving its text/embed untouched. */
 async function removeKeyboard(api: Sender, chatId: string, msgId: string) {
   await api.edit(chatId, msgId, { components: [] });
 }
@@ -90,10 +108,13 @@ export async function createGame(
     input.slots.map((s, i) => ({ kickoffAt: s.kickoffAt, label: s.label, sortOrder: i })),
   );
   const slots = await repo.getSlots(gameId);
-  // Ping the group once, only at "come and vote" — re-renders use the plain board.
-  // This is the single message allowed to resolve @everyone (the group ping).
-  const text = `${GROUP_PING}\n${renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0, new Map())}`;
-  const msgId = await send(api, input.chatId, text, voteComponents(gameId, slots), ['users', 'everyone']);
+  // Ping the group once, only at "come and vote". The @everyone goes in `content` (it must,
+  // to actually notify — a mention inside the embed wouldn't); the board is the embed.
+  const board = renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0, new Map());
+  const msgId = await sendBoard(api, input.chatId, board, voteComponents(gameId, slots), {
+    content: GROUP_PING,
+    allowedMentions: ['users', 'everyone'],
+  });
   await repo.setVoteMsg(gameId, msgId, input.now);
 }
 
@@ -135,7 +156,7 @@ async function rerenderVote(api: Sender, repo: Repo, game: Game): Promise<void> 
     countVoters(votes),
     groupVoters(named),
   );
-  await safeEditText(api, game.chatId, game.voteMsgId, text, voteComponents(game.id, slots));
+  await editBoard(api, game.chatId, game.voteMsgId, text, voteComponents(game.id, slots));
 }
 
 export async function closeVoting(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
@@ -150,7 +171,7 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
     if (game.voteMsgId) {
       const named = await repo.getVotesWithNames(game.id);
       const tieText = renderVoteTie(game.locationNote, tallyVotes(slots, votes), groupVoters(named));
-      await safeEditText(api, game.chatId, game.voteMsgId, tieText);
+      await editBoard(api, game.chatId, game.voteMsgId, tieText);
       await removeKeyboard(api, game.chatId, game.voteMsgId);
     }
     await send(api, game.chatId, M.tieAdminPrompt, tieComponents(game.id, tied.length ? tied : slots));
@@ -170,7 +191,7 @@ async function openRsvp(api: Sender, repo: Repo, game: Game, winner: Slot, now: 
   const rsvpCloseAt = winner.kickoffAt - RSVP_CLOSE_BEFORE_KICKOFF_MS;
   await repo.lockWinner(game.id, winner.id, rsvpCloseAt, now);
   if (game.voteMsgId) {
-    await safeEditText(api, game.chatId, game.voteMsgId, renderVoteResult(game.locationNote, winner.label));
+    await editBoard(api, game.chatId, game.voteMsgId, renderVoteResult(game.locationNote, winner.label));
     await removeKeyboard(api, game.chatId, game.voteMsgId);
   }
   const text = renderRsvpMessage({
@@ -182,7 +203,7 @@ async function openRsvp(api: Sender, repo: Repo, game: Game, winner: Slot, now: 
     rsvpCloseAt,
     state: 'open',
   });
-  const msgId = await send(api, game.chatId, text, rsvpComponents(game.id));
+  const msgId = await sendBoard(api, game.chatId, text, rsvpComponents(game.id));
   await repo.setRsvpMsg(game.id, msgId, now);
 }
 
@@ -241,7 +262,7 @@ async function rerenderRsvp(
     rsvpCloseAt: game.rsvpCloseAt,
     state,
   });
-  await safeEditText(api, game.chatId, game.rsvpMsgId, text, state === 'open' ? rsvpComponents(game.id) : undefined);
+  await editBoard(api, game.chatId, game.rsvpMsgId, text, state === 'open' ? rsvpComponents(game.id) : undefined);
   if (state !== 'open') await removeKeyboard(api, game.chatId, game.rsvpMsgId);
 }
 
@@ -315,7 +336,7 @@ export async function repost(api: Sender, repo: Repo, game: Game, now: number): 
       groupVoters(named),
     );
     if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
-    const msgId = await send(api, game.chatId, text, voteComponents(game.id, slots));
+    const msgId = await sendBoard(api, game.chatId, text, voteComponents(game.id, slots));
     await repo.setVoteMsg(game.id, msgId, now);
   } else if (game.status === 'RSVP_OPEN') {
     const winner = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
@@ -330,7 +351,7 @@ export async function repost(api: Sender, repo: Repo, game: Game, now: number): 
       state: 'open',
     });
     if (game.rsvpMsgId) await removeKeyboard(api, game.chatId, game.rsvpMsgId);
-    const msgId = await send(api, game.chatId, text, rsvpComponents(game.id));
+    const msgId = await sendBoard(api, game.chatId, text, rsvpComponents(game.id));
     await repo.setRsvpMsg(game.id, msgId, now);
   } else if (game.status === 'TIEBREAK') {
     const slots = await repo.getSlots(game.id);
@@ -344,7 +365,7 @@ export async function repost(api: Sender, repo: Repo, game: Game, now: number): 
       pending: v.confirmedAbsent,
       checkinCloseAt: game.checkinCloseAt,
     });
-    const msgId = await send(api, game.chatId, text, checkinComponents(game.id));
+    const msgId = await sendBoard(api, game.chatId, text, checkinComponents(game.id));
     await repo.setCheckinMsg(game.id, msgId, now);
   }
 }
@@ -368,7 +389,7 @@ export async function openCheckin(api: Sender, repo: Repo, game: Game, now: numb
     pending: split.confirmed.map((p) => ({ displayName: p.displayName })),
     checkinCloseAt: closeAt,
   });
-  const msgId = await send(api, game.chatId, text, checkinComponents(game.id));
+  const msgId = await sendBoard(api, game.chatId, text, checkinComponents(game.id));
   await repo.setCheckinMsg(game.id, msgId, now);
 }
 
@@ -392,7 +413,7 @@ async function rerenderCheckin(api: Sender, repo: Repo, game: Game): Promise<voi
     pending: v.confirmedAbsent,
     checkinCloseAt: game.checkinCloseAt,
   });
-  await safeEditText(api, game.chatId, game.checkinMsgId, text, checkinComponents(game.id));
+  await editBoard(api, game.chatId, game.checkinMsgId, text, checkinComponents(game.id));
 }
 
 // CHECKIN_OPEN → PLAYED: window closed. Lock the board, assign ghosts, post the recap.
@@ -406,7 +427,7 @@ export async function closeCheckin(api: Sender, repo: Repo, game: Game, now: num
 async function postRecap(api: Sender, repo: Repo, game: Game): Promise<void> {
   const v = await attendanceView(repo, game);
   const text = renderRecap({ winnerLabel: v.winnerLabel, present: v.present, ghosts: v.confirmedAbsent });
-  await send(api, game.chatId, text, recapComponents(game.id, v.confirmedAbsent));
+  await sendBoard(api, game.chatId, text, recapComponents(game.id, v.confirmedAbsent));
 }
 
 // Admin taps "X jogou" on the recap to clear a false ghost. Edits that recap message in place.
@@ -424,6 +445,6 @@ export async function clearGhost(
   await repo.addCheckin(gameId, userId, 'admin', now);
   const v = await attendanceView(repo, game);
   const text = renderRecap({ winnerLabel: v.winnerLabel, present: v.present, ghosts: v.confirmedAbsent });
-  await safeEditText(api, chatId, msgId, text, recapComponents(gameId, v.confirmedAbsent));
+  await editBoard(api, chatId, msgId, text, recapComponents(gameId, v.confirmedAbsent));
   return true;
 }

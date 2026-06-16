@@ -28,7 +28,14 @@ const sent: { chatId: string; text: string }[] = [];
 let msgId = 1000;
 const sender: Sender = {
   async send(chatId, msg) {
-    sent.push({ chatId, text: msg.content ?? '' });
+    // Boards are now embeds, so include their title+description in the recorded text.
+    const emb = (msg.embeds ?? [])
+      .map((e) => {
+        const x = e as { title?: string; description?: string };
+        return `${x.title ?? ''}\n${x.description ?? ''}`;
+      })
+      .join('\n');
+    sent.push({ chatId, text: `${msg.content ?? ''}\n${emb}` });
     return String(++msgId);
   },
   async edit() {
