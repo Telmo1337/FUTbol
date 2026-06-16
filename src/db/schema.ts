@@ -3,8 +3,11 @@
 import { sqliteTable, integer, text, primaryKey } from 'drizzle-orm/sqlite-core';
 import type { CheckinSource, GameStatus, RsvpStatus } from '../types';
 
+// NOTE: id-bearing columns (tg_user_id, chat_id, created_by, *_msg_id) are TEXT —
+// they hold Discord snowflakes, which overflow JS numbers if read as integers.
+// Our own ids (games.id, candidate_slots.id, winning_slot_id) stay INTEGER.
 export const players = sqliteTable('players', {
-  tgUserId: integer('tg_user_id').primaryKey(),
+  tgUserId: text('tg_user_id').primaryKey(),
   displayName: text('display_name').notNull(),
   username: text('username'),
   isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
@@ -13,8 +16,8 @@ export const players = sqliteTable('players', {
 
 export const games = sqliteTable('games', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  chatId: integer('chat_id').notNull(),
-  createdBy: integer('created_by').notNull(),
+  chatId: text('chat_id').notNull(),
+  createdBy: text('created_by').notNull(),
   status: text('status').$type<GameStatus>().notNull(),
   locationNote: text('location_note').notNull(),
   minPlayers: integer('min_players').notNull(),
@@ -23,9 +26,9 @@ export const games = sqliteTable('games', {
   rsvpCloseAt: integer('rsvp_close_at'),
   checkinCloseAt: integer('checkin_close_at'),
   winningSlotId: integer('winning_slot_id'),
-  voteMsgId: integer('vote_msg_id'),
-  rsvpMsgId: integer('rsvp_msg_id'),
-  checkinMsgId: integer('checkin_msg_id'),
+  voteMsgId: text('vote_msg_id'),
+  rsvpMsgId: text('rsvp_msg_id'),
+  checkinMsgId: text('checkin_msg_id'),
   flagGameOnSent: integer('flag_game_on_sent', { mode: 'boolean' }).notNull().default(false),
   flagShortWarnSent: integer('flag_short_warn_sent', { mode: 'boolean' }).notNull().default(false),
   flagNonrespPingSent: integer('flag_nonresp_ping_sent', { mode: 'boolean' }).notNull().default(false),
@@ -46,7 +49,7 @@ export const votes = sqliteTable(
   {
     gameId: integer('game_id').notNull(),
     slotId: integer('slot_id').notNull(),
-    tgUserId: integer('tg_user_id').notNull(),
+    tgUserId: text('tg_user_id').notNull(),
     createdAt: integer('created_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.gameId, t.slotId, t.tgUserId] })],
@@ -56,7 +59,7 @@ export const rsvps = sqliteTable(
   'rsvps',
   {
     gameId: integer('game_id').notNull(),
-    tgUserId: integer('tg_user_id').notNull(),
+    tgUserId: text('tg_user_id').notNull(),
     status: text('status').$type<RsvpStatus>().notNull(),
     rankAt: integer('rank_at').notNull(),
     promotedNotifiedAt: integer('promoted_notified_at'),
@@ -70,7 +73,7 @@ export const checkins = sqliteTable(
   'checkins',
   {
     gameId: integer('game_id').notNull(),
-    tgUserId: integer('tg_user_id').notNull(),
+    tgUserId: text('tg_user_id').notNull(),
     checkedInAt: integer('checked_in_at').notNull(),
     source: text('source').$type<CheckinSource>().notNull(),
   },

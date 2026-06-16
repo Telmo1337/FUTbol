@@ -2,7 +2,7 @@
 import type { Repo } from '../db/repo';
 import { computeStats, type Stats } from '../core/stats';
 
-export async function loadStats(repo: Repo, chatId: number): Promise<Stats> {
+export async function loadStats(repo: Repo, chatId: string): Promise<Stats> {
   const games = await repo.getPlayedGames(chatId);
   const gameIds = games.map((g) => g.id);
   const [rsvps, checkins, players] = await Promise.all([

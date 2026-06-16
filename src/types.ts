@@ -1,15 +1,22 @@
 // Shared types used across the whole app. No runtime dependencies here.
+//
+// NOTE on ids: this started as a Telegram bot, so id-bearing fields are still
+// named `tgUserId`, `chatId`, `*MsgId`. They now hold **Discord** ids (snowflakes),
+// which are 64-bit and overflow JS numbers — so they are **strings**, not numbers.
+// Our own DB ids (game.id, slot.id, winningSlotId) stay numeric autoincrements.
 
 /** Cloudflare/Worker bindings + secrets. Mirrors wrangler.toml + .dev.vars. */
 export interface Env {
   DB: D1Database;
-  /** From @BotFather. Secret. */
-  BOT_TOKEN: string;
-  /** JSON from getMe, only needed on Workers to skip an init round-trip. */
-  BOT_INFO?: string;
-  /** Shared secret to verify Telegram webhook calls (prod only). */
-  WEBHOOK_SECRET?: string;
-  /** Comma-separated Telegram numeric user ids allowed to run admin commands. */
+  /** Discord bot token (from the Developer Portal → Bot). Secret. Used for REST sends. */
+  DISCORD_BOT_TOKEN: string;
+  /** Discord application public key (General Information). Verifies incoming interactions. */
+  DISCORD_PUBLIC_KEY: string;
+  /** Discord application id. Used to register slash commands. */
+  DISCORD_APPLICATION_ID: string;
+  /** The server (guild) id — slash commands are registered per-guild for instant updates. */
+  DISCORD_GUILD_ID?: string;
+  /** Comma-separated Discord user ids (strings) allowed to run admin commands. */
   ADMIN_IDS?: string;
   TZ?: string;
 }
@@ -29,7 +36,7 @@ export type RsvpStatus = 'IN' | 'OUT' | 'MAYBE';
 export type CheckinSource = 'self' | 'admin';
 
 export interface Player {
-  tgUserId: number;
+  tgUserId: string; // Discord user id (snowflake)
   displayName: string;
   username: string | null;
   isAdmin: boolean;
@@ -38,8 +45,8 @@ export interface Player {
 
 export interface Game {
   id: number;
-  chatId: number;
-  createdBy: number;
+  chatId: string; // Discord channel id (snowflake)
+  createdBy: string; // Discord user id of the admin who opened it
   status: GameStatus;
   locationNote: string;
   minPlayers: number;
@@ -48,9 +55,9 @@ export interface Game {
   rsvpCloseAt: number | null; // unix ms UTC, set once winner is locked
   checkinCloseAt: number | null; // unix ms UTC, set when the check-in window opens (kickoff + window)
   winningSlotId: number | null;
-  voteMsgId: number | null;
-  rsvpMsgId: number | null;
-  checkinMsgId: number | null;
+  voteMsgId: string | null; // Discord message id of the live vote board
+  rsvpMsgId: string | null;
+  checkinMsgId: string | null;
   flagGameOnSent: boolean;
   flagShortWarnSent: boolean;
   flagNonrespPingSent: boolean;
@@ -69,13 +76,13 @@ export interface Slot {
 export interface Vote {
   gameId: number;
   slotId: number;
-  tgUserId: number;
+  tgUserId: string; // Discord user id
   createdAt: number;
 }
 
 export interface Rsvp {
   gameId: number;
-  tgUserId: number;
+  tgUserId: string; // Discord user id
   status: RsvpStatus;
   rankAt: number; // waitlist ordering: when they (last) joined as IN
   promotedNotifiedAt: number | null;
@@ -91,7 +98,7 @@ export interface RsvpView extends Rsvp {
 /** A presence record: this player was at this game. */
 export interface Checkin {
   gameId: number;
-  tgUserId: number;
+  tgUserId: string; // Discord user id
   checkedInAt: number;
   source: CheckinSource;
 }

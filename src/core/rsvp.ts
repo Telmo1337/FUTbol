@@ -12,7 +12,7 @@ export interface SquadSplit {
 export function splitSquad(list: RsvpView[], cap: number): SquadSplit {
   const ins = list
     .filter((r) => r.status === 'IN')
-    .sort((a, b) => a.rankAt - b.rankAt || a.tgUserId - b.tgUserId);
+    .sort((a, b) => a.rankAt - b.rankAt || a.tgUserId.localeCompare(b.tgUserId));
   return {
     confirmed: ins.slice(0, cap),
     waitlist: ins.slice(cap),
@@ -21,6 +21,6 @@ export function splitSquad(list: RsvpView[], cap: number): SquadSplit {
   };
 }
 
-export function confirmedIds(list: RsvpView[], cap: number): Set<number> {
+export function confirmedIds(list: RsvpView[], cap: number): Set<string> {
   return new Set(splitSquad(list, cap).confirmed.map((r) => r.tgUserId));
 }

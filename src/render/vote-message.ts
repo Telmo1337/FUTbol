@@ -6,7 +6,7 @@ import type { Tally } from '../core/voting';
 const NUM = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
 function tallyLines(tally: Tally[]): string[] {
-  return tally.map((t, i) => `${NUM[i] ?? '•'} <b>${esc(t.slot.label)}</b> — ${M.vote.votesCount(t.count)}`);
+  return tally.map((t, i) => `${NUM[i] ?? '•'} **${esc(t.slot.label)}** — ${M.vote.votesCount(t.count)}`);
 }
 
 export function renderVoteMessage(loc: string, tally: Tally[], voteDeadline: number, voters: number): string {
@@ -23,7 +23,7 @@ export function renderVoteMessage(loc: string, tally: Tally[], voteDeadline: num
 }
 
 export function renderVoteResult(loc: string, winnerLabel: string): string {
-  return [M.vote.resultTitle, `📅 <b>${esc(winnerLabel)}</b>`, `📍 ${esc(loc)}`].join('\n');
+  return [M.vote.resultTitle, `📅 **${esc(winnerLabel)}**`, `📍 ${esc(loc)}`].join('\n');
 }
 
 export function renderVoteTie(loc: string, tally: Tally[]): string {

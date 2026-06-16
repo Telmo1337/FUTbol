@@ -1,13 +1,16 @@
-# ⚽ FUTbol — bot de Telegram para o futebol semanal
+# ⚽ FUTbol — bot de Discord para o futebol semanal
 
-A Telegram bot that kills the weekly "qual é o dia? quem joga?" friction for a casual
+A Discord bot that kills the weekly "qual é o dia? quem joga?" friction for a casual
 football group. The admin opens a day-vote; everyone taps to vote and to confirm presence —
-all inside the group chat. Waitlist, auto-promotion on dropouts, and automatic reminders
+all inside one channel. Waitlist, auto-promotion on dropouts, and automatic reminders
 are handled for you. **European Portuguese (pt-PT)**, runs for **€0**.
+
+> Corre em **Cloudflare Workers + D1 + Cron** via **HTTP interactions** (slash commands,
+> botões e um modal) — sem servidor sempre-a-correr, sem cartão de crédito.
 
 ## Como funciona (the weekly loop)
 
-1. **🗳️ Votação** — o admin abre com `/novojogo` (2+ horários + local). Toda a gente carrega no(s) dia(s) em que pode.
+1. **🗳️ Votação** — o admin abre com `/novojogo` (preenche um formulário: 2+ horários + local). O bot publica o quadro e faz `@everyone`. Toda a gente carrega no(s) dia(s) em que pode.
 2. **📅 Dia escolhido** — no fim do prazo, o bot fecha a votação e anuncia o vencedor.
 3. **✅ Presenças** — o bot abre as inscrições: `✅ Vou / ❌ Não vou / 🤔 Talvez`.
 4. **📋 Lista + lista de espera** — os primeiros até ao máximo ficam confirmados; o resto vai para a lista de espera e **sobe automaticamente** quando alguém desiste.
@@ -19,120 +22,87 @@ are handled for you. **European Portuguese (pt-PT)**, runs for **€0**.
 
 | Comando | O que faz |
 |---|---|
-| `/novojogo` | Abrir uma votação de dia *(só admin)* |
-| `/jogo` | Ver / re-mostrar o jogo atual |
+| `/novojogo` | Abrir uma votação de dia *(só admin — abre um formulário)* |
+| `/jogo` | Re-mostrar o jogo atual no canal |
 | `/fecharvotacao` | Fechar já a votação *(só admin)* |
 | `/cancelar` | Cancelar o jogo atual *(só admin)* |
 | `/stats` | Ranking de presenças e fiabilidade 📊 |
-| `/eu` | As tuas estatísticas 📇 |
-| `/euquem` | Ver o teu ID de Telegram |
+| `/eu` | As tuas estatísticas 📇 *(só tu vês)* |
+| `/euquem` | Ver o teu ID de Discord |
 | `/ajuda` | Ajuda |
 
-### Formato do `/novojogo`
+### O formulário do `/novojogo`
 
-```
-/novojogo
-local: IPVC ESTG - campo 7x7
-jogadores: 10-14
-fecha: 13/06 21:00
-dia: 14/06 20:00
-dia: 18/06 21:00
-dia: 20/06 18:00
-```
-
-`fecha` e `jogadores` são opcionais (default: 10-14, e a votação fecha 6h antes do horário mais cedo).
+`/novojogo` abre um popup com 4 campos:
+- **Horários** — uma opção por linha, no formato `DD/MM HH:MM` (mete 2 ou mais).
+- **Local** — onde se joga *(opcional)*.
+- **Jogadores** — mínimo-máximo, ex. `10-14` *(opcional, default 10-14)*.
+- **Fecho da votação** — `DD/MM HH:MM` *(opcional; default = 6h antes do horário mais cedo)*.
 
 ---
 
 ## 🛠️ Setup (primeira vez)
 
-### 1. Criar o bot no @BotFather
-1. Fala com [@BotFather](https://t.me/BotFather) → `/newbot` → escolhe nome e username → copia o **token**.
-2. `/setprivacy` → escolhe o bot → **Disable** (para o bot ver os comandos no grupo).
-3. `/setcommands` → escolhe o bot → cola:
-   ```
-   novojogo - Abrir votação de dia (admin)
-   jogo - Ver o jogo atual
-   fecharvotacao - Fechar já a votação (admin)
-   cancelar - Cancelar o jogo atual (admin)
-   stats - Ranking de presenças e fiabilidade
-   eu - As minhas estatísticas
-   euquem - Ver o meu ID de Telegram
-   ajuda - Ajuda
-   ```
+### 1. Criar a aplicação/bot no Developer Portal (só email, sem SMS)
+1. Vai a **https://discord.com/developers/applications** → **New Application** → dá-lhe um nome (ex.: *FUTbol*).
+2. **General Information**: copia o **Application ID** e a **Public Key**.
+3. **Bot** (menu lateral) → **Reset Token** → copia o **token** (só aparece uma vez). Desliga **Public Bot**.
+4. **Installation** (ou **OAuth2 → URL Generator**): scopes **`bot`** + **`applications.commands`**; permissões **Send Messages** e **Mention Everyone**. Abre o URL gerado e **adiciona o bot ao teu servidor**.
+5. No Discord, ativa o **Modo de Programador** (Definições → Avançado). Clica-direito no **canal → Copiar ID do canal**, no **servidor → Copiar ID do servidor**, e no **teu nome → Copiar ID de utilizador**.
 
 ### 2. Configurar segredos
 ```bash
 cp .dev.vars.example .dev.vars
 ```
-Edita `.dev.vars` e mete o teu `BOT_TOKEN`. Deixa `ADMIN_IDS` vazio por agora.
+Edita `.dev.vars` e mete: `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID`,
+`DISCORD_GUILD_ID` (= id do servidor) e `ADMIN_IDS` (= o teu id de utilizador).
 
-### 3. Correr localmente
+### 3. Registar os comandos no servidor
 ```bash
 npm install                 # (já feito)
-npm run db:migrate:local    # cria as tabelas na base de dados local
-npm run local               # arranca o bot (long polling)
+npm run register            # cria os slash commands no teu servidor (instantâneo)
+```
+Corre isto outra vez sempre que mudares a lista de comandos.
+
+### 4. Migrar a base de dados local + verificar o motor
+```bash
+npm run db:migrate:local    # cria as tabelas na D1 local
+npm run selftest            # simula o ciclo todo (sem tocar no Discord)
 ```
 
-### 4. Tornar-te admin
-- Manda `/euquem` ao bot (em privado ou no grupo) → copia o teu ID.
-- Mete-o no `.dev.vars`: `ADMIN_IDS=123456789`
-- Pára o bot (Ctrl+C) e `npm run local` outra vez.
-
-### 5. Adicionar ao grupo e testar
-- Adiciona o bot ao grupo de Telegram do futebol.
-- Faz `/novojogo` com datas daqui a uns minutos para veres o ciclo todo. Dica de teste:
-  mete o `fecha` para daqui a 2 min e vê a votação fechar sozinha (o tick corre a cada 30s em local).
-
-> O bot só está vivo enquanto `npm run local` estiver a correr. Para estar **sempre ligado** (mesmo com o PC desligado), faz o deploy à Cloudflare — passo abaixo.
+> Bots de HTTP interactions não correm "localmente" como um long-poll: o Discord precisa de
+> um URL público para te chamar. O `selftest` valida toda a lógica; o teste com o Discord real
+> faz-se com o deploy (abaixo) — grátis e sem cartão.
 
 ---
 
 ## ☁️ Deploy à Cloudflare (sempre ligado, €0, sem cartão)
 
-> O plano gratuito do Workers **não pede cartão** e **não cobra**: se passasses os limites (não vais — são ~100k pedidos/dia), ele simplesmente pára de servir, nunca fatura.
+> O plano gratuito do Workers **não pede cartão** e **não cobra**: se passasses os limites
+> (não vais — são ~100k pedidos/dia), ele simplesmente pára de servir, nunca fatura.
 
 ```bash
 npx wrangler login                          # abre o browser para autenticar
 npx wrangler d1 create futbol-db            # copia o "database_id" que aparece
 ```
-1. Cola o `database_id` no `wrangler.toml` (campo `database_id`).
-2. Migrar a base de dados de produção:
-   ```bash
-   npm run db:migrate:remote
-   ```
-3. Segredos e variáveis:
-   ```bash
-   npx wrangler secret put BOT_TOKEN        # cola o token
-   npx wrangler secret put WEBHOOK_SECRET   # cola uma string aleatória (openssl rand -hex 32)
-   ```
-   No `wrangler.toml [vars]`: mete o teu `ADMIN_IDS = "123456789"` e o `BOT_INFO`
-   (resultado de `curl https://api.telegram.org/bot<TOKEN>/getMe`, entre **plicas**:
-   `BOT_INFO = '{"ok":true,"result":{...}}'`).
-4. Deploy:
-   ```bash
-   npm run deploy
-   ```
-5. Apontar o Telegram ao Worker (substitui `<TOKEN>`, o URL do Worker e o `<SECRET>`):
-   ```bash
-   curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://futbol-bot.<o-teu-subdominio>.workers.dev/&secret_token=<WEBHOOK_SECRET>"
-   ```
-   O cron (definido no `wrangler.toml`) trata dos avisos e prazos a cada minuto.
+1. Cola o `database_id` no `wrangler.toml`.
+2. Migrar a base de dados de produção: `npm run db:migrate:remote`.
+3. Variáveis (não-secretas) no `wrangler.toml [vars]`: `ADMIN_IDS`, `DISCORD_APPLICATION_ID`,
+   `DISCORD_PUBLIC_KEY`, `DISCORD_GUILD_ID`.
+4. Segredo (o token): `npx wrangler secret put DISCORD_BOT_TOKEN`.
+5. Deploy: `npm run deploy` → copia o URL do Worker (`https://futbol-bot.<subdomínio>.workers.dev`).
+6. No **Developer Portal → General Information → Interactions Endpoint URL**: cola esse URL e
+   **Save**. O Discord envia um PING para validar; o bot responde sozinho. ✅
 
-> ⚠️ Webhook e long polling não podem estar ativos ao mesmo tempo. Depois do `setWebhook`,
-> não corras o `npm run local` com o mesmo token (ou apaga o webhook com `deleteWebhook`).
+O cron (no `wrangler.toml`) trata dos avisos e prazos a cada minuto. Os comandos já foram
+registados no passo 3 (se mudares a lista, corre `npm run register` de novo).
 
 ---
 
-## 🧪 Testar o motor (sem Telegram)
+## 🧪 Testar o motor (sem Discord)
 
 ```bash
-npm run selftest
-```
-Simula o ciclo todo (votação → vencedor → presenças → lista de espera → promoção → fecho)
-contra a base de dados local, com uma API de Telegram falsa. Útil depois de mexeres no código.
-
-```bash
+npm run selftest      # simula votação → vencedor → presenças → lista de espera → promoção → fecho → check-in
 npm run typecheck     # verifica os tipos
 ```
 
@@ -142,21 +112,25 @@ npm run typecheck     # verifica os tipos
 
 ```
 src/
-  index.ts        Workers entry (webhook + cron)
-  local.ts        Local entry (long polling + tick por timer)
-  bot/            grammY wiring: comandos, callbacks, admin guard
-  core/           lógica pura (sem grammY/DB): votação, presenças, avisos, datas
+  index.ts        Workers entry (interactions endpoint + cron)
+  discord/        adapter Discord: verify (ed25519), rest (cliente), components,
+                  commands, novojogo (modal), interactions (router)
+  core/           lógica pura (sem Discord/DB): votação, presenças, avisos, datas, stats
   db/             schema (Drizzle) + repo (único sítio com SQL)
-  render/         construção das mensagens + teclados
-  services/       games.ts (orquestração) + tick.ts (relógio)
+  render/         construção do texto das mensagens (markdown)
+  services/       games.ts (orquestração) + tick.ts (relógio) + stats.ts
   messages.ts     TODAS as frases (pt-PT) — muda aqui o texto
 migrations/       SQL aplicado ao D1 (local e remoto)
-scripts/selftest.ts
+scripts/          selftest.ts · register-commands.ts
 ```
+
+> **Ids:** começou em Telegram, por isso os campos chamam-se `tgUserId` / `chatId` / `*MsgId` —
+> mas guardam **ids de Discord** (snowflakes de 64 bits), por isso são **strings** (colunas `TEXT`).
 
 ## 🗺️ A seguir (já pensado, sem reescrever o que está feito)
 
-- ✅ **v2 — Estatísticas** automáticas: presenças, fiabilidade, sequências, "o mais fiável" 🏅, fantasma 👻. *(feito — ver `docs/v2-plan.md`)*
+- ✅ **v2 — Estatísticas** automáticas: presenças, fiabilidade, sequências, fantasma 👻. *(feito — ver `docs/v2-plan.md`)*
 - **v3 — Vitórias/derrotas + MVP** com um toque depois do jogo.
 - **Repartir a conta** do campo (quem pagou / quem deve).
-- **Painel web** de estatísticas (Cloudflare Pages + Telegram Mini App, abre dentro do Telegram, sem login).
+- **Embeds** mais bonitos para os quadros (já dá para fazer, é polimento visual).
+- **Painel web** de estatísticas (Cloudflare Pages).

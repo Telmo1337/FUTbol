@@ -17,8 +17,8 @@ export type NudgeFlag = 'GAME_ON' | 'SHORT_WARN' | 'NONRESP_PING';
 const ACTIVE = GAME_STATUSES_ACTIVE as unknown as GameStatus[];
 
 export interface NewGame {
-  chatId: number;
-  createdBy: number;
+  chatId: string;
+  createdBy: string;
   locationNote: string;
   minPlayers: number;
   capPlayers: number;
@@ -32,7 +32,7 @@ export function createRepo(d1: D1Database) {
   return {
     // ---------- players ----------
     async upsertPlayer(
-      p: { tgUserId: number; displayName: string; username: string | null },
+      p: { tgUserId: string; displayName: string; username: string | null },
       isAdmin: boolean,
       now: number,
     ): Promise<void> {
@@ -45,7 +45,7 @@ export function createRepo(d1: D1Database) {
         });
     },
 
-    async getKnownPlayers(): Promise<{ tgUserId: number; displayName: string }[]> {
+    async getKnownPlayers(): Promise<{ tgUserId: string; displayName: string }[]> {
       return db.select({ tgUserId: players.tgUserId, displayName: players.displayName }).from(players);
     },
 
@@ -78,7 +78,7 @@ export function createRepo(d1: D1Database) {
       return db.select().from(games).where(inArray(games.status, ACTIVE));
     },
 
-    async getCurrentGame(chatId: number): Promise<Game | null> {
+    async getCurrentGame(chatId: string): Promise<Game | null> {
       const row = await db
         .select()
         .from(games)
@@ -88,11 +88,11 @@ export function createRepo(d1: D1Database) {
       return row ?? null;
     },
 
-    async setVoteMsg(id: number, msgId: number, now: number): Promise<void> {
+    async setVoteMsg(id: number, msgId: string, now: number): Promise<void> {
       await db.update(games).set({ voteMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
     },
 
-    async setRsvpMsg(id: number, msgId: number, now: number): Promise<void> {
+    async setRsvpMsg(id: number, msgId: string, now: number): Promise<void> {
       await db.update(games).set({ rsvpMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
     },
 
@@ -117,7 +117,7 @@ export function createRepo(d1: D1Database) {
         .run();
     },
 
-    async setCheckinMsg(id: number, msgId: number, now: number): Promise<void> {
+    async setCheckinMsg(id: number, msgId: string, now: number): Promise<void> {
       await db.update(games).set({ checkinMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
     },
 
@@ -150,7 +150,7 @@ export function createRepo(d1: D1Database) {
     },
 
     // ---------- votes ----------
-    async toggleVote(gameId: number, slotId: number, tgUserId: number, now: number): Promise<'added' | 'removed'> {
+    async toggleVote(gameId: number, slotId: number, tgUserId: string, now: number): Promise<'added' | 'removed'> {
       const where = and(eq(votes.gameId, gameId), eq(votes.slotId, slotId), eq(votes.tgUserId, tgUserId));
       const existing = await db.select().from(votes).where(where).get();
       if (existing) {
@@ -168,7 +168,7 @@ export function createRepo(d1: D1Database) {
     // ---------- rsvps ----------
     async setRsvp(
       gameId: number,
-      tgUserId: number,
+      tgUserId: string,
       status: RsvpStatus,
       now: number,
     ): Promise<{ prevStatus: RsvpStatus | null }> {
@@ -214,7 +214,7 @@ export function createRepo(d1: D1Database) {
     },
 
     /** Guarded write: returns true only if THIS call flipped the flag (prevents double notifications). */
-    async markPromotedNotified(gameId: number, tgUserId: number, now: number): Promise<boolean> {
+    async markPromotedNotified(gameId: number, tgUserId: string, now: number): Promise<boolean> {
       const res = (await db.run(
         sql`UPDATE rsvps SET promoted_notified_at = ${now} WHERE game_id = ${gameId} AND tg_user_id = ${tgUserId} AND promoted_notified_at IS NULL`,
       )) as unknown as D1Result;
@@ -223,7 +223,7 @@ export function createRepo(d1: D1Database) {
 
     // ---------- checkins (attendance) ----------
     /** Record a player as present. Returns true only if this call added a new row (vs already present). */
-    async addCheckin(gameId: number, tgUserId: number, source: CheckinSource, now: number): Promise<boolean> {
+    async addCheckin(gameId: number, tgUserId: string, source: CheckinSource, now: number): Promise<boolean> {
       const where = and(eq(checkins.gameId, gameId), eq(checkins.tgUserId, tgUserId));
       const existing = await db.select().from(checkins).where(where).get();
       if (existing) return false;
@@ -237,7 +237,7 @@ export function createRepo(d1: D1Database) {
 
     // ---------- stats (read-side, all-time per chat) ----------
     /** Finished games (with kickoff time) for a chat, oldest first. */
-    async getPlayedGames(chatId: number): Promise<PlayedGame[]> {
+    async getPlayedGames(chatId: string): Promise<PlayedGame[]> {
       return db
         .select({ id: games.id, capPlayers: games.capPlayers, kickoffAt: candidateSlots.kickoffAt })
         .from(games)
@@ -248,7 +248,7 @@ export function createRepo(d1: D1Database) {
 
     async getRsvpsForGames(
       gameIds: number[],
-    ): Promise<{ gameId: number; tgUserId: number; status: RsvpStatus; rankAt: number }[]> {
+    ): Promise<{ gameId: number; tgUserId: string; status: RsvpStatus; rankAt: number }[]> {
       if (gameIds.length === 0) return [];
       return db
         .select({ gameId: rsvps.gameId, tgUserId: rsvps.tgUserId, status: rsvps.status, rankAt: rsvps.rankAt })
@@ -256,7 +256,7 @@ export function createRepo(d1: D1Database) {
         .where(inArray(rsvps.gameId, gameIds));
     },
 
-    async getCheckinsForGames(gameIds: number[]): Promise<{ gameId: number; tgUserId: number }[]> {
+    async getCheckinsForGames(gameIds: number[]): Promise<{ gameId: number; tgUserId: string }[]> {
       if (gameIds.length === 0) return [];
       return db
         .select({ gameId: checkins.gameId, tgUserId: checkins.tgUserId })

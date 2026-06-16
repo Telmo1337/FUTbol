@@ -1,11 +1,11 @@
-// The only clock. Runs every minute on Workers (Cron Trigger) and every 30s locally.
+// The only clock. Runs every minute on Workers (Cron Trigger).
 // Advances time-driven transitions and fires due nudges. Idempotent: safe to re-run.
-import type { Api } from 'grammy';
+import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
 import { isCheckinExpired, isRsvpExpired, isVotingExpired } from '../core/lifecycle';
 import * as games from './games';
 
-export async function runTick(api: Api, repo: Repo, now: number): Promise<void> {
+export async function runTick(api: Sender, repo: Repo, now: number): Promise<void> {
   const active = await repo.getActiveGames();
   for (const game of active) {
     try {

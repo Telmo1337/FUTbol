@@ -28,7 +28,11 @@ export const VOTE_LEAD_BEFORE_EARLIEST_MS = 6 * HOUR;
 export const SHORT_WARN_BEFORE_CLOSE_MS = 6 * HOUR;
 export const NONRESP_PING_BEFORE_CLOSE_MS = 12 * HOUR;
 
-/** How often the local long-polling process runs the tick. Workers uses a 1-min cron. */
-export const TICK_INTERVAL_MS_LOCAL = 30_000;
+/**
+ * How we ping the group at the "come and vote" moment (a new game opens).
+ * The server is football-only, so @everyone == exactly the group. Switch to a
+ * role mention (e.g. '<@&ROLE_ID>') here if you ever add non-players to the server.
+ */
+export const GROUP_PING = '@everyone';
 
 export const GAME_STATUSES_ACTIVE = ['VOTING', 'TIEBREAK', 'RSVP_OPEN', 'LOCKED', 'CHECKIN_OPEN'] as const;

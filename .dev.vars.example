@@ -1,14 +1,21 @@
 # Copy this file to `.dev.vars` and fill in your real values.
 # `.dev.vars` is gitignored — it never gets committed.
 
-# REQUIRED for local mode (long polling) and for the Worker webhook.
-# Get it from @BotFather with /newbot.
-BOT_TOKEN=123456789:AA-your-bot-token-from-botfather
+# Discord bot token (Developer Portal → your app → Bot → Reset Token). SECRET.
+# Needed to send messages (and by `npm run register`).
+DISCORD_BOT_TOKEN=
 
-# Your Telegram numeric user id(s), comma-separated. These are the admins who can
-# run /novojogo, /fecharvotacao and /cancelar. Find yours by messaging the bot /euquem.
+# Discord application public key (Developer Portal → General Information).
+# Verifies that incoming interactions really came from Discord.
+DISCORD_PUBLIC_KEY=
+
+# Discord application id (General Information). Used to register slash commands.
+DISCORD_APPLICATION_ID=
+
+# Your server (guild) id. Enable Developer Mode in Discord, then right-click the
+# server → Copy Server ID. Used by `npm run register`.
+DISCORD_GUILD_ID=
+
+# Your Discord user id(s), comma-separated — the admins who can run /novojogo,
+# /fecharvotacao and /cancelar. Right-click your name → Copy User ID (or use /euquem).
 ADMIN_IDS=
-
-# Only needed when deploying to Cloudflare (webhook security). Any long random string.
-# Generate one with:  openssl rand -hex 32
-WEBHOOK_SECRET=

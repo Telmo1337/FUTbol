@@ -1,20 +1,22 @@
 # Cloudflare Workers config. Local dev needs only the [[d1_databases]] block.
-# Before deploying (M7), replace database_id and paste BOT_INFO (see README).
+# Before deploying, replace database_id and set the secret below (see README).
 name = "futbol-bot"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Non-secret vars. Secrets (BOT_TOKEN, WEBHOOK_SECRET) live in .dev.vars locally
-# and `wrangler secret put ...` in production — never here.
+# Non-secret vars. The bot TOKEN is a SECRET — never put it here. Set it in prod with
+# `wrangler secret put DISCORD_BOT_TOKEN`. Locally, everything lives in .dev.vars.
 [vars]
 TZ = "Europe/Lisbon"
-# Comma-separated Telegram numeric user ids that may run admin commands.
-# (Local dev reads this from .dev.vars instead.)
+# Comma-separated Discord user ids (strings) that may run admin commands.
 ADMIN_IDS = ""
-# Paste the JSON from `curl https://api.telegram.org/bot<TOKEN>/getMe` before deploy.
-# Lets the Worker skip a getMe round-trip on every request.
-BOT_INFO = ""
+# Discord application id + public key (Developer Portal → General Information).
+# The public key only verifies inbound signatures, so it's safe to commit.
+DISCORD_APPLICATION_ID = ""
+DISCORD_PUBLIC_KEY = ""
+# Your server (guild) id — used by `npm run register` to register slash commands.
+DISCORD_GUILD_ID = ""
 
 [[d1_databases]]
 binding = "DB"
