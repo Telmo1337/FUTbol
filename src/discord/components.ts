@@ -32,7 +32,9 @@ export function parseCb(data: string): ParsedCb | null {
   if (p[0] === 'ci' && p.length === 2) {
     return { kind: 'checkin', gameId };
   }
-  if (p[0] === 'ug' && p.length === 3 && p[2]) {
+  if (p[0] === 'ug' && p.length === 3 && /^\d+$/.test(p[2])) {
+    // tgUserId is a Discord snowflake (digits only). It flows into a `<@id>` mention,
+    // so reject anything non-numeric rather than echo it back into a message.
     return { kind: 'unghost', gameId, tgUserId: p[2] };
   }
   return null;

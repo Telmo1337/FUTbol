@@ -9,6 +9,12 @@ const API = 'https://discord.com/api/v10';
 export interface OutMessage {
   content?: string;
   components?: unknown[];
+  /**
+   * Which mention kinds Discord is allowed to resolve into real pings for THIS message.
+   * Defaults to user mentions only. The "come and vote" message opts into `'everyone'`;
+   * nothing else can ping the whole server even if its text somehow contained @everyone.
+   */
+  allowedMentions?: ('users' | 'everyone')[];
 }
 
 /** The send/edit surface the engine needs. Real impl below; fake one in the selftest. */
@@ -19,9 +25,12 @@ export interface Sender {
   edit(channelId: string, messageId: string, msg: OutMessage): Promise<void>;
 }
 
-// We deliberately allow @everyone (the group ping) and user mentions; user-provided
-// text is defanged in util.esc() so a name can never smuggle a real ping through.
-const ALLOWED_MENTIONS = { parse: ['users', 'everyone'] };
+// Per-message allow-list. We default to user mentions only; the group ping (@everyone)
+// is opt-in per message (see OutMessage.allowedMentions). User-provided text is also
+// defanged in util.esc(), so a name can never smuggle a real ping through either way.
+function mentionsFor(msg: OutMessage) {
+  return { parse: msg.allowedMentions ?? ['users'] };
+}
 
 export function createSender(env: Env): Sender {
   const headers = {
@@ -46,7 +55,7 @@ export function createSender(env: Env): Sender {
       const res = await call(`${API}/channels/${channelId}/messages`, 'POST', {
         content: msg.content ?? '',
         components: msg.components ?? [],
-        allowed_mentions: ALLOWED_MENTIONS,
+        allowed_mentions: mentionsFor(msg),
       });
       if (!res.ok) {
         console.error('[discord send]', res.status, await res.text());
@@ -57,7 +66,7 @@ export function createSender(env: Env): Sender {
     },
 
     async edit(channelId, messageId, msg) {
-      const payload: Record<string, unknown> = { allowed_mentions: ALLOWED_MENTIONS };
+      const payload: Record<string, unknown> = { allowed_mentions: mentionsFor(msg) };
       if (msg.content !== undefined) payload.content = msg.content;
       if (msg.components !== undefined) payload.components = msg.components;
       const res = await call(`${API}/channels/${channelId}/messages/${messageId}`, 'PATCH', payload);

@@ -25,8 +25,14 @@ const MAX_PING = 15;
 
 // ---------- Discord send/edit helpers ----------
 /** Post a message; returns the new message id. */
-async function send(api: Sender, chatId: string, text: string, components?: unknown[]): Promise<string> {
-  return api.send(chatId, { content: text, components: components ?? [] });
+async function send(
+  api: Sender,
+  chatId: string,
+  text: string,
+  components?: unknown[],
+  allowedMentions?: ('users' | 'everyone')[],
+): Promise<string> {
+  return api.send(chatId, { content: text, components: components ?? [], allowedMentions });
 }
 
 /** Edit a board's text (and buttons) in place. */
@@ -85,8 +91,9 @@ export async function createGame(
   );
   const slots = await repo.getSlots(gameId);
   // Ping the group once, only at "come and vote" — re-renders use the plain board.
+  // This is the single message allowed to resolve @everyone (the group ping).
   const text = `${GROUP_PING}\n${renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0)}`;
-  const msgId = await send(api, input.chatId, text, voteComponents(gameId, slots));
+  const msgId = await send(api, input.chatId, text, voteComponents(gameId, slots), ['users', 'everyone']);
   await repo.setVoteMsg(gameId, msgId, input.now);
 }
 

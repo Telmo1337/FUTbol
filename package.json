@@ -15,7 +15,7 @@
     "db:tables": "wrangler d1 execute futbol-db --local --command \"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\""
   },
   "dependencies": {
-    "drizzle-orm": "^0.38.3"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
