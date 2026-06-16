@@ -13,6 +13,7 @@ import {
   FIELD_DAY_OF_SUNDAY,
   FIELD_ID,
   FIRESTORE_BASE,
+  WEEKLY_EXCLUDED_DOWS,
 } from '../config';
 import { lisbonToUtc } from '../core/time';
 import { computeFreeSlots } from '../core/availability';
@@ -148,6 +149,7 @@ export async function loadFreeSlots(client: FieldClient, opts: { now: number }):
     stepMin: AVAIL_STEP_MIN,
     earliestHour: AVAIL_EARLIEST_HOUR,
     latestHour: AVAIL_LATEST_HOUR,
+    excludedDows: WEEKLY_EXCLUDED_DOWS,
     fieldDayOfSunday: FIELD_DAY_OF_SUNDAY,
     maxSlots: AVAIL_MAX_SLOTS,
   });

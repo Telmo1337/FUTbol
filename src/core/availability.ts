@@ -26,6 +26,8 @@ export interface AvailabilityInput {
   stepMin: number;
   earliestHour: number;
   latestHour: number;
+  /** ISO weekdays (1=Mon..7=Sun) to never propose, e.g. [5, 7] for Friday + Sunday. */
+  excludedDows: number[];
   /** Which `workingHours.day` value means Sunday in Field's data (to map Field-day → ISO weekday). */
   fieldDayOfSunday: number;
   maxSlots: number;
@@ -67,7 +69,7 @@ export function computeFreeSlots(input: AvailabilityInput): FreeSlot[] {
 
   for (let d = 0; d < input.daysAhead; d++) {
     const p = lisbonParts(now + d * DAY_MS); // {weekday 1..7, year, month, day}
-    if (p.weekday === 7) continue; // never propose Sundays
+    if (input.excludedDows.includes(p.weekday)) continue; // skip excluded weekdays (Fri + Sun)
 
     const windows = workingHours.filter((w) => fieldDayToIso(w.day, input.fieldDayOfSunday) === p.weekday);
     for (const w of windows) {
