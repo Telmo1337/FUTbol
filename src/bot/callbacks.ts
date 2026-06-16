@@ -27,6 +27,18 @@ export function registerCallbacks(bot: Bot, env: Env, repo: Repo): void {
       } else if (parsed.kind === 'tie') {
         if (!isAdmin(env, ctx.from.id)) ack = M.cb.onlyAdmin;
         else ack = (await games.resolveTie(ctx.api, repo, parsed.gameId, parsed.slotId, now)) ? M.cb.tieResolved : M.cb.error;
+      } else if (parsed.kind === 'checkin') {
+        ack = await games.handleCheckin(ctx.api, repo, parsed.gameId, ctx.from.id, now);
+      } else if (parsed.kind === 'unghost') {
+        if (!isAdmin(env, ctx.from.id)) ack = M.cb.onlyAdmin;
+        else {
+          const msg = ctx.callbackQuery.message;
+          ack = msg
+            ? (await games.clearGhost(ctx.api, repo, parsed.gameId, parsed.tgUserId, msg.chat.id, msg.message_id, now))
+              ? M.cb.ghostCleared
+              : M.cb.error
+            : M.cb.error;
+        }
       }
     } catch (e) {
       console.error('[callback]', e);

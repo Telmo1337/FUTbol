@@ -1,7 +1,7 @@
 // Drizzle table definitions — the single source of truth for typed queries.
 // Must stay in sync with migrations/0000_init.sql.
 import { sqliteTable, integer, text, primaryKey } from 'drizzle-orm/sqlite-core';
-import type { GameStatus, RsvpStatus } from '../types';
+import type { CheckinSource, GameStatus, RsvpStatus } from '../types';
 
 export const players = sqliteTable('players', {
   tgUserId: integer('tg_user_id').primaryKey(),
@@ -21,9 +21,11 @@ export const games = sqliteTable('games', {
   capPlayers: integer('cap_players').notNull(),
   voteDeadline: integer('vote_deadline').notNull(),
   rsvpCloseAt: integer('rsvp_close_at'),
+  checkinCloseAt: integer('checkin_close_at'),
   winningSlotId: integer('winning_slot_id'),
   voteMsgId: integer('vote_msg_id'),
   rsvpMsgId: integer('rsvp_msg_id'),
+  checkinMsgId: integer('checkin_msg_id'),
   flagGameOnSent: integer('flag_game_on_sent', { mode: 'boolean' }).notNull().default(false),
   flagShortWarnSent: integer('flag_short_warn_sent', { mode: 'boolean' }).notNull().default(false),
   flagNonrespPingSent: integer('flag_nonresp_ping_sent', { mode: 'boolean' }).notNull().default(false),
@@ -59,6 +61,18 @@ export const rsvps = sqliteTable(
     rankAt: integer('rank_at').notNull(),
     promotedNotifiedAt: integer('promoted_notified_at'),
     updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.gameId, t.tgUserId] })],
+);
+
+// v2: attendance. One row = this player was present at this game.
+export const checkins = sqliteTable(
+  'checkins',
+  {
+    gameId: integer('game_id').notNull(),
+    tgUserId: integer('tg_user_id').notNull(),
+    checkedInAt: integer('checked_in_at').notNull(),
+    source: text('source').$type<CheckinSource>().notNull(),
   },
   (t) => [primaryKey({ columns: [t.gameId, t.tgUserId] })],
 );

@@ -5,6 +5,9 @@ import { M } from '../messages';
 import { isAdmin, playerFromCtx } from './middleware';
 import { parseNovoJogo } from './parse-novojogo';
 import * as games from '../services/games';
+import { loadStats } from '../services/stats';
+import { statFor } from '../core/stats';
+import { renderPersonalCard, renderStats, sinceLabel } from '../render/stats-message';
 
 const HTML = { parse_mode: 'HTML' as const };
 
@@ -77,6 +80,21 @@ export function registerCommands(bot: Bot, env: Env, repo: Repo): void {
       return;
     }
     await games.closeVoting(ctx.api, repo, game, Date.now());
+  });
+
+  bot.command(['stats', 'estatisticas'], async (ctx) => {
+    await touch(ctx, env, repo);
+    if (!ctx.chat) return;
+    const stats = await loadStats(repo, ctx.chat.id);
+    await ctx.reply(renderStats(stats, sinceLabel(stats.firstKickoff)), HTML);
+  });
+
+  bot.command(['eu', 'me'], async (ctx) => {
+    await touch(ctx, env, repo);
+    if (!ctx.chat || !ctx.from) return;
+    const stats = await loadStats(repo, ctx.chat.id);
+    const name = playerFromCtx(ctx)?.displayName ?? 'Jogador';
+    await ctx.reply(renderPersonalCard(statFor(stats, ctx.from.id, name), stats.totalGames), HTML);
   });
 
   bot.command('cancelar', async (ctx) => {
