@@ -2,10 +2,18 @@
 // Advances time-driven transitions and fires due nudges. Idempotent: safe to re-run.
 import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
+import type { FieldClient } from './field';
 import { isCheckinExpired, isRsvpExpired, isVotingExpired } from '../core/lifecycle';
 import * as games from './games';
+import { maybeCreateWeeklyGame, type WeeklyConfig } from './weekly';
 
-export async function runTick(api: Sender, repo: Repo, now: number): Promise<void> {
+export async function runTick(
+  api: Sender,
+  repo: Repo,
+  now: number,
+  field: FieldClient,
+  weekly: WeeklyConfig,
+): Promise<void> {
   const active = await repo.getActiveGames();
   for (const game of active) {
     try {
@@ -25,4 +33,7 @@ export async function runTick(api: Sender, repo: Repo, now: number): Promise<voi
       console.error('[tick] game', game.id, e);
     }
   }
+
+  // Once a week (Sunday 18:00 Lisbon) open the auto-game from the field's free slots.
+  await maybeCreateWeeklyGame(api, repo, field, weekly, now);
 }

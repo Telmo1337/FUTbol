@@ -4,7 +4,9 @@ import { verifyInteraction } from './discord/verify';
 import { handleInteraction } from './discord/interactions';
 import { createSender } from './discord/rest';
 import { createRepo } from './db/repo';
+import { createFieldClient } from './services/field';
 import { runTick } from './services/tick';
+import { parseAdminIds } from './util';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -28,6 +30,11 @@ export default {
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const repo = createRepo(env.DB);
     const sender = createSender(env);
-    await runTick(sender, repo, Date.now());
+    const field = createFieldClient();
+    const weekly = {
+      channelId: env.GAME_CHANNEL_ID ?? '',
+      createdBy: parseAdminIds(env.ADMIN_IDS).values().next().value ?? 'system',
+    };
+    await runTick(sender, repo, Date.now(), field, weekly);
   },
 } satisfies ExportedHandler<Env>;

@@ -36,3 +36,30 @@ export const NONRESP_PING_BEFORE_CLOSE_MS = 12 * HOUR;
 export const GROUP_PING = '@everyone';
 
 export const GAME_STATUSES_ACTIVE = ['VOTING', 'TIEBREAK', 'RSVP_OPEN', 'LOCKED', 'CHECKIN_OPEN'] as const;
+
+// ---------------------------------------------------------------------------
+// field.pt / getfield.app — weekly auto-game from the field's free slots.
+// ---------------------------------------------------------------------------
+// The booking site is a Firebase app (project `field-v2-prod`) whose Firestore
+// rules allow PUBLIC READ with the web API key — so the Worker reads availability
+// directly, no login. The key is public by design (not a secret).
+export const FIELD_API_KEY = 'AIzaSyAsdBrcNAvRvDWj-aEyWr6twLwgNTb71OY';
+export const FIRESTORE_BASE =
+  'https://firestore.googleapis.com/v1/projects/field-v2-prod/databases/(default)/documents';
+/** Our club + pitch doc ids (the IPVC ESE 7x7 field). */
+export const FIELD_CLUB_ID = '5QkuPXdvkISXwFZQyMlB';
+export const FIELD_ID = 'Ia79UGKogA7oNBxp9PNS';
+
+/** When the weekly auto-game fires (Lisbon wall-clock; weekday 1=Mon..7=Sun). */
+export const WEEKLY_TRIGGER_DOW = 7; // Sunday
+export const WEEKLY_TRIGGER_HOUR = 18; // fires on any tick during the 18:xx hour; dedup keeps it to 1
+/** Free-slot search window + shape. Locked with the user: 60-min slots, evenings only, Mon–Sat. */
+export const AVAIL_DAYS_AHEAD = 7;
+export const AVAIL_SLOT_MIN = 60;
+export const AVAIL_STEP_MIN = 60;
+export const AVAIL_EARLIEST_HOUR = 18; // only propose kickoffs at/after this Lisbon hour
+export const AVAIL_LATEST_HOUR = 24;
+export const AVAIL_MAX_SLOTS = 25; // Discord renders at most 25 buttons (5×5)
+/** Which `workingHours.day` value means Sunday in Field's data. VERIFY with `npm run print:avail`. */
+export const FIELD_DAY_OF_SUNDAY = 7;
+export const WEEKLY_LOCATION_NOTE = 'IPVC ESE - campo 7x7';

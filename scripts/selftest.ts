@@ -9,7 +9,10 @@ import { createRepo } from '../src/db/repo';
 import * as games from '../src/services/games';
 import { confirmedIds, splitSquad } from '../src/core/rsvp';
 import { pickWinner } from '../src/core/voting';
-import { parseDateTime, formatWhen } from '../src/core/time';
+import { parseDateTime, formatWhen, lisbonToUtc, lisbonParts } from '../src/core/time';
+import { computeFreeSlots } from '../src/core/availability';
+import { isWeeklyTriggerWindow, maybeCreateWeeklyGame } from '../src/services/weekly';
+import type { FieldClient } from '../src/services/field';
 import { loadStats } from '../src/services/stats';
 import { computeStats, statFor, topByGhosts, topByReliability } from '../src/core/stats';
 
@@ -38,6 +41,36 @@ const NOW = Date.UTC(2026, 5, 15, 12, 0, 0); // 2026-06-15 12:00 UTC
 check('parseDateTime parses "20/06 18:00"', parseDateTime('20/06 18:00', NOW) !== null);
 check('parseDateTime rejects garbage', parseDateTime('amanhã às tantas', NOW) === null);
 check('formatWhen produces a label', /\d{2}:\d{2}/.test(formatWhen(NOW)));
+
+// --- pure computeFreeSlots: Sunday exclusion, >=18h filter, booked-slot subtraction ---
+// NOW = Mon 2026-06-15. Field uses day 1=Mon..7=Sun (fieldDayOfSunday=7).
+const avFree = computeFreeSlots({
+  now: NOW,
+  workingHours: [
+    { day: 1, start: '16:00', end: '20:00' }, // Mon: 16/17 dropped (<18h), 18/19 kept
+    { day: 2, start: '18:00', end: '20:00' }, // Tue: 18 booked below, 19 kept
+    { day: 6, start: '18:00', end: '20:00' }, // Sat: 18/19 kept
+    { day: 7, start: '18:00', end: '20:00' }, // Sun: excluded entirely
+  ],
+  booked: [{ startMs: lisbonToUtc(2026, 6, 16, 18, 0), endMs: lisbonToUtc(2026, 6, 16, 19, 0) }],
+  blocked: [],
+  daysAhead: 7,
+  slotLenMin: 60,
+  stepMin: 60,
+  earliestHour: 18,
+  latestHour: 24,
+  fieldDayOfSunday: 7,
+  maxSlots: 25,
+});
+check('availability: never proposes Sunday', avFree.every((s) => lisbonParts(s.kickoffAt).weekday !== 7));
+check('availability: respects the >=18h filter', avFree.every((s) => lisbonParts(s.kickoffAt).hour >= 18));
+check('availability: drops the booked Tue 18:00 slot', !avFree.some((s) => s.kickoffAt === lisbonToUtc(2026, 6, 16, 18, 0)));
+check('availability: keeps the free Tue 19:00 slot', avFree.some((s) => s.kickoffAt === lisbonToUtc(2026, 6, 16, 19, 0)));
+check(
+  'availability: keeps Sat 18:00 & 19:00',
+  avFree.some((s) => s.kickoffAt === lisbonToUtc(2026, 6, 20, 18, 0)) &&
+    avFree.some((s) => s.kickoffAt === lisbonToUtc(2026, 6, 20, 19, 0)),
+);
 
 const proxy = await getPlatformProxy<Env>();
 const repo = createRepo(proxy.env.DB);
@@ -173,6 +206,52 @@ check('computeStats: sub earns appearance, no reliability', p20.appearances === 
 check('computeStats: late sub current streak 1', statFor(sStats, '30', 'Caz').currentStreak === 1);
 check('computeStats: reliability board only ranks >= 3 games', topByReliability(sStats, 5).every((p) => p.confirmedFor >= 3));
 check('computeStats: ghost board includes p10', topByGhosts(sStats, 5).some((p) => p.tgUserId === '10'));
+
+// --- weekly auto-game (Sunday 18:00) with a fake FieldClient — stays offline ---
+const fakeField: FieldClient = {
+  async fetchWorkingHours() {
+    return { workingHours: [{ day: 1, start: '18:00', end: '21:00' }], blocked: [] }; // Mon 18/19/20
+  },
+  async fetchBookings() {
+    return [];
+  },
+};
+const emptyField: FieldClient = {
+  async fetchWorkingHours() {
+    return { workingHours: [], blocked: [] };
+  },
+  async fetchBookings() {
+    return [];
+  },
+};
+const sundayNow = lisbonToUtc(2026, 6, 21, 18, 0); // Sun 2026-06-21 18:00 Lisbon
+check('weekly: trigger window true on Sun 18:00 Lisbon', isWeeklyTriggerWindow(sundayNow));
+check('weekly: trigger window false on Mon 18:00', !isWeeklyTriggerWindow(lisbonToUtc(2026, 6, 15, 18, 0)));
+
+const wChat = `weekly-${Date.now()}`;
+await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, sundayNow);
+const wGame = await repo.getCurrentGame(wChat);
+check('weekly: auto-game created in VOTING', !!wGame && wGame.status === 'VOTING');
+check('weekly: created with the field free slots', wGame != null && (await repo.getSlots(wGame.id)).length === 3);
+
+const sentBeforeW = sent.length;
+await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, sundayNow + 60_000);
+check(
+  'weekly: a second tick in the hour does not duplicate',
+  sent.length === sentBeforeW && (await repo.getActiveGames()).filter((g) => g.chatId === wChat).length === 1,
+);
+
+const wChatEmpty = `weekly-empty-${Date.now()}`;
+const sentBeforeE = sent.length;
+await maybeCreateWeeklyGame(sender, repo, emptyField, { channelId: wChatEmpty, createdBy: '1' }, sundayNow);
+check(
+  'weekly: no free slots → no game and no message',
+  (await repo.getCurrentGame(wChatEmpty)) === null && sent.length === sentBeforeE,
+);
+
+const wChatMon = `weekly-mon-${Date.now()}`;
+await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChatMon, createdBy: '1' }, lisbonToUtc(2026, 6, 15, 18, 0));
+check('weekly: wrong day → no game created', (await repo.getCurrentGame(wChatMon)) === null);
 
 console.log(`\n${failures === 0 ? '🎉 All checks passed' : `💥 ${failures} check(s) failed`}`);
 await proxy.dispose();

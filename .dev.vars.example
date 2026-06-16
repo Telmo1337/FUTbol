@@ -19,3 +19,7 @@ DISCORD_GUILD_ID=
 # Your Discord user id(s), comma-separated — the admins who can run /novojogo,
 # /fecharvotacao and /cancelar. Right-click your name → Copy User ID (or use /euquem).
 ADMIN_IDS=
+
+# Channel where the weekly auto-game poll is posted (Sunday 18:00). Right-click the
+# channel → Copy Channel ID. Leave empty to disable the weekly auto-game.
+GAME_CHANNEL_ID=
