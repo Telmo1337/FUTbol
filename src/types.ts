@@ -18,6 +18,11 @@ export interface Env {
   DISCORD_GUILD_ID?: string;
   /** Comma-separated Discord user ids (strings) allowed to run admin commands. */
   ADMIN_IDS?: string;
+  /**
+   * Discord channel id where the weekly auto-game poll is posted. Used ONLY by the
+   * Sunday cron (interactions already know their own channel). Empty = feature off.
+   */
+  GAME_CHANNEL_ID?: string;
   TZ?: string;
 }
 

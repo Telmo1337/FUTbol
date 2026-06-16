@@ -37,6 +37,45 @@ export function formatWhen(ms: number): string {
   return `${cap(stripDot(p.weekday ?? ''))}, ${p.day} ${stripDot(p.month ?? '')} · ${p.hour}:${p.minute}`;
 }
 
+const WEEKDAY_TO_ISO: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+
+/**
+ * Lisbon wall-clock parts as numbers (weekday 1=Mon..7=Sun). DST-safe: the hour/weekday
+ * come straight from Intl in the Lisbon zone, never from UTC arithmetic. Used to answer
+ * "is it Sunday 18:00 in Lisbon?" and to walk forward day-by-day.
+ */
+export function lisbonParts(ms: number): {
+  weekday: number;
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: TIMEZONE,
+    weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const m: Record<string, string> = {};
+  for (const p of dtf.formatToParts(new Date(ms))) m[p.type] = p.value;
+  let hour = Number(m.hour);
+  if (hour === 24) hour = 0; // some engines emit "24" at midnight
+  return {
+    weekday: WEEKDAY_TO_ISO[m.weekday] ?? 0,
+    year: Number(m.year),
+    month: Number(m.month),
+    day: Number(m.day),
+    hour,
+    minute: Number(m.minute),
+  };
+}
+
 /** How far (ms) Europe/Lisbon is ahead of UTC at the given instant. */
 function tzOffsetMs(utcMs: number): number {
   const dtf = new Intl.DateTimeFormat('en-US', {
