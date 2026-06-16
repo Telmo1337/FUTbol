@@ -26,6 +26,8 @@ export interface AvailabilityInput {
   stepMin: number;
   earliestHour: number;
   latestHour: number;
+  /** ISO weekdays where the earliestHour floor is lifted (any open hour allowed), e.g. [6] for Saturday. */
+  anyHourDows: number[];
   /** ISO weekdays (1=Mon..7=Sun) to never propose, e.g. [5, 7] for Friday + Sunday. */
   excludedDows: number[];
   /** Which `workingHours.day` value means Sunday in Field's data (to map Field-day → ISO weekday). */
@@ -71,6 +73,7 @@ export function computeFreeSlots(input: AvailabilityInput): FreeSlot[] {
     const p = lisbonParts(now + d * DAY_MS); // {weekday 1..7, year, month, day}
     if (input.excludedDows.includes(p.weekday)) continue; // skip excluded weekdays (Fri + Sun)
 
+    const anyHour = input.anyHourDows.includes(p.weekday); // e.g. Saturday: allow daytime too
     const windows = workingHours.filter((w) => fieldDayToIso(w.day, input.fieldDayOfSunday) === p.weekday);
     for (const w of windows) {
       const startMin = hhmmToMinutes(w.start);
@@ -79,7 +82,7 @@ export function computeFreeSlots(input: AvailabilityInput): FreeSlot[] {
 
       for (let mins = startMin; mins + slotLenMin <= endMin; mins += stepMin) {
         const hour = Math.floor(mins / 60);
-        if (hour < earliestHour || hour >= latestHour) continue;
+        if ((!anyHour && hour < earliestHour) || hour >= latestHour) continue;
         const kickoffAt = lisbonToUtc(p.year, p.month, p.day, hour, mins % 60);
         if (kickoffAt <= now) continue;
         if (overlaps(kickoffAt, kickoffAt + slotMs, booked)) continue;

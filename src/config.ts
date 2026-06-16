@@ -57,8 +57,10 @@ export const WEEKLY_TRIGGER_HOUR = 18; // fires on any tick during the 18:xx hou
 export const AVAIL_DAYS_AHEAD = 7;
 export const AVAIL_SLOT_MIN = 60;
 export const AVAIL_STEP_MIN = 60;
-export const AVAIL_EARLIEST_HOUR = 18; // only propose kickoffs at/after this Lisbon hour
+export const AVAIL_EARLIEST_HOUR = 18; // only propose kickoffs at/after this Lisbon hour...
 export const AVAIL_LATEST_HOUR = 24;
+/** ...except on these weekdays, where ANY open hour is allowed (Saturday plays daytime too). ISO 1=Mon..7=Sun. */
+export const AVAIL_ANY_HOUR_DOWS = [6]; // Saturday
 export const AVAIL_MAX_SLOTS = 25; // Discord renders at most 25 buttons (5×5)
 /** Which `workingHours.day` value means Sunday in Field's data. VERIFY with `npm run print:avail`. */
 export const FIELD_DAY_OF_SUNDAY = 7;
