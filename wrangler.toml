@@ -1,0 +1,29 @@
+# Cloudflare Workers config. Local dev needs only the [[d1_databases]] block.
+# Before deploying (M7), replace database_id and paste BOT_INFO (see README).
+name = "futbol-bot"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Non-secret vars. Secrets (BOT_TOKEN, WEBHOOK_SECRET) live in .dev.vars locally
+# and `wrangler secret put ...` in production — never here.
+[vars]
+TZ = "Europe/Lisbon"
+# Comma-separated Telegram numeric user ids that may run admin commands.
+# (Local dev reads this from .dev.vars instead.)
+ADMIN_IDS = ""
+# Paste the JSON from `curl https://api.telegram.org/bot<TOKEN>/getMe` before deploy.
+# Lets the Worker skip a getMe round-trip on every request.
+BOT_INFO = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "futbol-db"
+# Placeholder is fine for --local. Replace with the real id (from `wrangler d1 create`)
+# before `db:migrate:remote` / `deploy`.
+database_id = "REPLACE_WITH_D1_ID_BEFORE_DEPLOY"
+migrations_dir = "migrations"
+
+# Runs the scheduled() handler every minute — powers the smart nudges & deadlines.
+[triggers]
+crons = ["* * * * *"]

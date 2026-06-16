@@ -1,0 +1,14 @@
+# Copy this file to `.dev.vars` and fill in your real values.
+# `.dev.vars` is gitignored — it never gets committed.
+
+# REQUIRED for local mode (long polling) and for the Worker webhook.
+# Get it from @BotFather with /newbot.
+BOT_TOKEN=123456789:AA-your-bot-token-from-botfather
+
+# Your Telegram numeric user id(s), comma-separated. These are the admins who can
+# run /novojogo, /fecharvotacao and /cancelar. Find yours by messaging the bot /euquem.
+ADMIN_IDS=
+
+# Only needed when deploying to Cloudflare (webhook security). Any long random string.
+# Generate one with:  openssl rand -hex 32
+WEBHOOK_SECRET=
