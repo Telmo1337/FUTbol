@@ -5,25 +5,19 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Non-secret vars. The bot TOKEN is a SECRET — never put it here. Set it in prod with
-# `wrangler secret put DISCORD_BOT_TOKEN`. Locally, everything lives in .dev.vars.
 [vars]
 TZ = "Europe/Lisbon"
-# Comma-separated Discord user ids (strings) that may run admin commands.
-ADMIN_IDS = ""
-# Discord application id + public key (Developer Portal → General Information).
-# The public key only verifies inbound signatures, so it's safe to commit.
-DISCORD_APPLICATION_ID = ""
-DISCORD_PUBLIC_KEY = ""
-# Your server (guild) id — used by `npm run register` to register slash commands.
-DISCORD_GUILD_ID = ""
+# Runtime values are set with `wrangler secret put` (kept out of this public repo):
+#   DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, ADMIN_IDS
+# DISCORD_APPLICATION_ID / DISCORD_GUILD_ID live only in .dev.vars (the local
+# `npm run register` script is the only thing that needs them).
 
 [[d1_databases]]
 binding = "DB"
 database_name = "futbol-db"
 # Placeholder is fine for --local. Replace with the real id (from `wrangler d1 create`)
 # before `db:migrate:remote` / `deploy`.
-database_id = "REPLACE_WITH_D1_ID_BEFORE_DEPLOY"
+database_id = "ab6077e4-96ad-4030-9233-0e3b6ad93231"
 migrations_dir = "migrations"
 
 # Runs the scheduled() handler every minute — powers the smart nudges & deadlines.
