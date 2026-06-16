@@ -58,6 +58,9 @@ const pong = () => reply({ type: 1 });
 const ephemeral = (content: string) => reply({ type: 4, data: { content, flags: 64 } });
 const publicMsg = (content: string) => reply({ type: 4, data: { content } });
 const modal = (data: object) => reply({ type: 9, data });
+// Type 6 = DEFERRED_UPDATE_MESSAGE: silently acknowledge a component tap (no toast, no
+// loading state). We edit the live board separately over REST.
+const silentAck = () => reply({ type: 6 });
 
 export async function handleInteraction(i: Interaction, env: Env, repo: Repo, sender: Sender): Promise<Response> {
   if (i.type === 1) return pong();
@@ -153,10 +156,14 @@ async function onComponent(
   const parsed = i.data?.custom_id ? parseCb(i.data.custom_id) : null;
   if (!parsed || !player) return ephemeral(M.cb.error);
 
-  let ack = '';
+  // A vote tap gets a silent ACK — no per-tapper toast; the board itself shows who voted what.
   if (parsed.kind === 'vote') {
-    ack = await games.handleVote(sender, repo, parsed.gameId, parsed.slotId, player.tgUserId, now);
-  } else if (parsed.kind === 'rsvp') {
+    await games.handleVote(sender, repo, parsed.gameId, parsed.slotId, player.tgUserId, now);
+    return silentAck();
+  }
+
+  let ack = '';
+  if (parsed.kind === 'rsvp') {
     ack = await games.handleRsvp(sender, repo, parsed.gameId, player.tgUserId, parsed.status, now);
   } else if (parsed.kind === 'tie') {
     if (!isAdmin(env, player.tgUserId)) ack = M.cb.onlyAdmin;

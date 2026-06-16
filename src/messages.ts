@@ -101,8 +101,6 @@ export const M = {
 
   // ---- Short toasts shown to the tapper (ephemeral interaction reply) ----
   cb: {
-    voteAdded: 'Voto registado ✅',
-    voteRemoved: 'Voto removido',
     votingClosed: 'A votação já fechou.',
     rsvpIn: 'Estás dentro! ✅',
     rsvpWait: 'Estás na lista de espera 📋',

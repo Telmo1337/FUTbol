@@ -165,6 +165,16 @@ export function createRepo(d1: D1Database) {
       return db.select().from(votes).where(eq(votes.gameId, gameId));
     },
 
+    /** Votes joined with each voter's display name, for showing "who voted what" on the board. */
+    async getVotesWithNames(gameId: number): Promise<{ slotId: number; tgUserId: string; displayName: string }[]> {
+      const rows = await db
+        .select({ slotId: votes.slotId, tgUserId: votes.tgUserId, displayName: players.displayName })
+        .from(votes)
+        .leftJoin(players, eq(players.tgUserId, votes.tgUserId))
+        .where(eq(votes.gameId, gameId));
+      return rows.map((r) => ({ slotId: r.slotId, tgUserId: r.tgUserId, displayName: r.displayName ?? 'Jogador' }));
+    },
+
     // ---------- rsvps ----------
     async setRsvp(
       gameId: number,
