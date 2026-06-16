@@ -259,18 +259,19 @@ const emptyField: FieldClient = {
     return [];
   },
 };
-const sundayNow = lisbonToUtc(2026, 6, 21, 18, 0); // Sun 2026-06-21 18:00 Lisbon
-check('weekly: trigger window true on Sun 18:00 Lisbon', isWeeklyTriggerWindow(sundayNow));
-check('weekly: trigger window false on Mon 18:00', !isWeeklyTriggerWindow(lisbonToUtc(2026, 6, 15, 18, 0)));
+const satNow = lisbonToUtc(2026, 6, 20, 22, 0); // Sat 2026-06-20 22:00 Lisbon
+check('weekly: trigger window true on Sat 22:00 Lisbon', isWeeklyTriggerWindow(satNow));
+check('weekly: trigger window false on Sat 21:00 (before 22h)', !isWeeklyTriggerWindow(lisbonToUtc(2026, 6, 20, 21, 0)));
+check('weekly: trigger window false on Sun 22:00 (wrong day)', !isWeeklyTriggerWindow(lisbonToUtc(2026, 6, 21, 22, 0)));
 
 const wChat = `weekly-${Date.now()}`;
-await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, sundayNow);
+await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, satNow);
 const wGame = await repo.getCurrentGame(wChat);
 check('weekly: auto-game created in VOTING', !!wGame && wGame.status === 'VOTING');
 check('weekly: created with the field free slots', wGame != null && (await repo.getSlots(wGame.id)).length === 3);
 
 const sentBeforeW = sent.length;
-await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, sundayNow + 60_000);
+await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, satNow + 60_000);
 check(
   'weekly: a second tick in the hour does not duplicate',
   sent.length === sentBeforeW && (await repo.getActiveGames()).filter((g) => g.chatId === wChat).length === 1,
@@ -278,7 +279,7 @@ check(
 
 const wChatEmpty = `weekly-empty-${Date.now()}`;
 const sentBeforeE = sent.length;
-await maybeCreateWeeklyGame(sender, repo, emptyField, { channelId: wChatEmpty, createdBy: '1' }, sundayNow);
+await maybeCreateWeeklyGame(sender, repo, emptyField, { channelId: wChatEmpty, createdBy: '1' }, satNow);
 check(
   'weekly: no free slots → no game and no message',
   (await repo.getCurrentGame(wChatEmpty)) === null && sent.length === sentBeforeE,
