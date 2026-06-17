@@ -40,6 +40,11 @@ export interface Env {
    * goals but drop assists (which are a subjective manual call). See util.assistsEnabled.
    */
   ASSISTS_ENABLED?: string;
+  /**
+   * Master switch for the 💶 pagamentos feature (the /pagamentos board + admin panel).
+   * Defaults ON when unset; set to "false"/"0"/"off" to hide it. See util.pagamentosEnabled.
+   */
+  PAGAMENTOS_ENABLED?: string;
   TZ?: string;
 }
 
@@ -88,6 +93,8 @@ export interface Game {
   checkinMsgId: string | null;
   teamsMsgId: string | null; // the public "⚔️ Equipas" board (flips from "a montar" → revealed)
   teamsLockedAt: number | null; // unix ms UTC, set when the admin publishes the teams
+  pricePerPersonCents: number | null; // 💶 per-person price in cents, set by the admin (null = unset)
+  paymentMsgId: string | null; // the public 💶 Pagamentos board
   flagGameOnSent: boolean;
   flagShortWarnSent: boolean;
   flagNonrespPingSent: boolean;

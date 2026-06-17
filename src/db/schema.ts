@@ -31,6 +31,8 @@ export const games = sqliteTable('games', {
   checkinMsgId: text('checkin_msg_id'),
   teamsMsgId: text('teams_msg_id'),
   teamsLockedAt: integer('teams_locked_at'),
+  pricePerPersonCents: integer('price_per_person_cents'), // 💶 per-person price (cents); null = unset
+  paymentMsgId: text('payment_msg_id'), // the public 💶 Pagamentos board
   flagGameOnSent: integer('flag_game_on_sent', { mode: 'boolean' }).notNull().default(false),
   flagShortWarnSent: integer('flag_short_warn_sent', { mode: 'boolean' }).notNull().default(false),
   flagNonrespPingSent: integer('flag_nonresp_ping_sent', { mode: 'boolean' }).notNull().default(false),
@@ -111,3 +113,14 @@ export const gameEvents = sqliteTable('game_events', {
   kind: text('kind').$type<EventKind>().notNull(),
   createdAt: integer('created_at').notNull(),
 });
+
+// v5: 💶 payments. One row = this player has paid for this game. Presence = paid; absence = owes.
+export const payments = sqliteTable(
+  'payments',
+  {
+    gameId: integer('game_id').notNull(),
+    tgUserId: text('tg_user_id').notNull(),
+    paidAt: integer('paid_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.gameId, t.tgUserId] })],
+);

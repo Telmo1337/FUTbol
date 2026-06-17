@@ -12,14 +12,16 @@ import type { Env } from '../types';
 import type { Repo } from '../db/repo';
 import type { Sender } from './rest';
 import { M } from '../messages';
-import { assistsEnabled, golosEnabled, parseAdminIds } from '../util';
-import { capturePanelComponents, historyComponents, parseCb, teamsPanelComponents } from './components';
+import { assistsEnabled, golosEnabled, pagamentosEnabled, parseAdminIds } from '../util';
+import { capturePanelComponents, historyComponents, parseCb, paymentPanelComponents, teamsPanelComponents } from './components';
 import { boardEmbed } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
 import { resultModal, parseResultFields } from './teams';
+import { paymentPriceModal, parsePriceField } from './payments';
 import * as games from '../services/games';
 import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../services/teams';
 import { loadCaptureState } from '../services/capture';
+import { loadPaymentState, postPaymentBoard, refreshPaymentBoard, setPaidSet } from '../services/payments';
 import { seedTestGame } from '../services/testseed';
 import { loadStats, loadStatsInput } from '../services/stats';
 import { loadHistory, type HistoryView } from '../services/history';
@@ -29,6 +31,7 @@ import { renderComparison, renderPersonalCard, renderStats, renderTopScorers, si
 import { renderHistory } from '../render/history-message';
 import { renderTeamsPanel } from '../render/teams-message';
 import { renderCapturePanel, renderCaptureSummary } from '../render/capture-message';
+import { renderPaymentPanel } from '../render/payment-message';
 import type { Game } from '../types';
 
 interface DiscordUser {
@@ -132,6 +135,16 @@ async function capturePanelData(repo: Repo, game: Game, assists: boolean): Promi
   };
 }
 
+/** The admin's private (ephemeral) 💶 pagamentos panel: the "who paid" select + price/done buttons. */
+async function paymentPanelData(repo: Repo, game: Game): Promise<object> {
+  const state = await loadPaymentState(repo, game);
+  return {
+    embeds: [boardEmbed(renderPaymentPanel(state))],
+    components: paymentPanelComponents(game.id, state.players, state.paid),
+    flags: 64,
+  };
+}
+
 export async function handleInteraction(i: Interaction, env: Env, repo: Repo, sender: Sender): Promise<Response> {
   if (i.type === 1) return pong();
 
@@ -210,6 +223,15 @@ async function onCommand(
       if (!game) return ephemeral(M.noTeamGame);
       if (!game.teamsLockedAt) return ephemeral(M.cb.resultNoTeams);
       return modal(resultModal(game.id));
+    }
+
+    case 'pagamentos': {
+      if (!isAdmin(env, player?.tgUserId)) return ephemeral(M.notAdmin);
+      if (!pagamentosEnabled(env)) return ephemeral(M.pay.off);
+      const game = await repo.getLatestSquadGame(channelId);
+      if (!game) return ephemeral(M.pay.noGame);
+      await postPaymentBoard(sender, repo, game, now);
+      return ephemeral(M.pay.posted);
     }
 
     case 'testjogo': {
@@ -293,6 +315,34 @@ async function onComponent(
   if (parsed.kind === 'historyPage') {
     const view = await loadHistory(repo, channelId, parsed.page, parsed.tgUserId, null, golosEnabled(env), assistsEnabled(env));
     return updateMsg(historyData(view));
+  }
+
+  // 💶 Pagamentos — admin-only panel + public board, gated by PAGAMENTOS_ENABLED.
+  if (
+    parsed.kind === 'paymentManage' ||
+    parsed.kind === 'paymentToggle' ||
+    parsed.kind === 'paymentPriceOpen' ||
+    parsed.kind === 'paymentDone'
+  ) {
+    if (!isAdmin(env, player.tgUserId)) return ephemeral(M.cb.onlyAdmin);
+    if (!pagamentosEnabled(env)) return ephemeral(M.pay.off);
+    const game = await repo.getGame(parsed.gameId);
+    if (!game) return ephemeral(M.cb.error);
+    if (parsed.kind === 'paymentManage') {
+      return reply({ type: 4, data: await paymentPanelData(repo, game) });
+    }
+    if (parsed.kind === 'paymentToggle') {
+      // The select offers only squad members; setPaidSet re-filters defensively.
+      await setPaidSet(repo, game, i.data?.values ?? [], now);
+      await refreshPaymentBoard(sender, repo, game);
+      return updateMsg(await paymentPanelData(repo, game));
+    }
+    if (parsed.kind === 'paymentPriceOpen') {
+      return modal(paymentPriceModal(game.id, game.pricePerPersonCents));
+    }
+    // paymentDone: refresh the public board and close the private panel.
+    await refreshPaymentBoard(sender, repo, game);
+    return updateMsg({ content: M.pay.panelDone, embeds: [], components: [] });
   }
 
   // Team-formation + result + ⚽ capture controls — all admin-only, all reply directly (panel / modal / update).
@@ -409,6 +459,20 @@ async function onModal(
     return golos
       ? reply({ type: 4, data: await capturePanelData(repo, game, assistsEnabled(env)) })
       : ephemeral(M.cb.resultSaved);
+  }
+
+  // 💶 price modal: set the per-person price for the game id carried in the custom_id.
+  if (customId.startsWith('pgpricem:')) {
+    if (!isAdmin(env, player?.tgUserId) || !player) return ephemeral(M.notAdmin);
+    if (!pagamentosEnabled(env)) return ephemeral(M.pay.off);
+    const game = await repo.getGame(Number(customId.split(':')[1]));
+    if (!game) return ephemeral(M.cb.error);
+    const parsedPrice = parsePriceField(fields.preco ?? '');
+    if ('error' in parsedPrice) return ephemeral(parsedPrice.error);
+    await repo.setGamePrice(game.id, parsedPrice.cents, now);
+    const fresh = (await repo.getGame(game.id))!;
+    await refreshPaymentBoard(sender, repo, fresh);
+    return updateMsg(await paymentPanelData(repo, fresh));
   }
 
   if (customId !== 'novojogo') return ephemeral(M.cb.error);

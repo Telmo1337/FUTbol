@@ -41,7 +41,8 @@ export const M = {
     '`/fecharvotacao` — fechar já a votação\n' +
     '`/cancelar` — cancelar o jogo atual\n' +
     '`/equipas` — montar/editar as equipas do jogo\n' +
-    '`/resultado` — registar o placar do último jogo',
+    '`/resultado` — registar o placar do último jogo\n' +
+    '`/pagamentos` — gerir quem já pagou o jogo',
 
   whoami: (id: string) =>
     `O teu ID de Discord é \`${id}\`.\n\n` +
@@ -223,6 +224,36 @@ export const M = {
     // shown after "Concluir" (read-only, no buttons)
     doneTitle: (day: string) => (day ? `⚽ **Golos & Assistências — ${day}**` : '⚽ **Golos & Assistências**'),
     doneFooter: '📊 Já conta para as estatísticas — `/stats`',
+  },
+
+  // ---- 💶 Pagamentos (quadro público + painel ephemeral, só admin) ----
+  pay: {
+    // shown when the 💶 pagamentos feature is switched off (PAGAMENTOS_ENABLED=false)
+    off: '💶 Os pagamentos estão desativados de momento.',
+    noGame: 'Não há nenhum jogo com inscrições fechadas para gerir pagamentos. Fecha as inscrições de um jogo primeiro.',
+    posted: 'Feito — o quadro de pagamentos está no canal 👇',
+    // ---- public board ----
+    boardTitle: (day: string) => (day ? `💶 **Pagamentos — ${day}**` : '💶 **Pagamentos**'),
+    priceUnset: '*Preço por definir — o admin define em 💶 Gerir pagamentos.*',
+    priceLine: (v: string) => `💶 **${v}** por pessoa`,
+    totalsLine: (got: string, exp: string, left: string, n: number, total: number) =>
+      `Recebido: **${got}** de ${exp} · falta **${left}** *(${n}/${total} pagaram)*`,
+    paidHeader: (n: number) => `✅ **Já pagaram (${n})**`,
+    oweHeader: (n: number) => `⏳ **Em falta (${n})**`,
+    empty: '— ninguém —',
+    boardFooter: '*Admin: carrega em 💶 Gerir pagamentos para marcar quem pagou.*',
+    manageButton: '💶 Gerir pagamentos',
+    // ---- ephemeral admin panel ----
+    panelTitle: '💶 **Gerir pagamentos** *(só tu vês isto)*',
+    panelHint: 'Marca no menu quem já pagou. Usa 💶 Definir preço para o valor por pessoa.',
+    selectPlaceholder: 'Quem já pagou…',
+    priceButton: '💶 Definir preço',
+    doneButton: '✅ Concluir',
+    panelDone: '✅ Pagamentos atualizados. O quadro está no canal.',
+    // ---- 💶 price modal ----
+    priceModalTitle: 'Preço por pessoa',
+    priceField: 'Preço por pessoa (€) — ex.: 5 ou 5,50',
+    errBadPrice: '⚠️ Preço inválido. Usa um número como `5` ou `5,50`.',
   },
 
   // ---- 🧪 /testjogo (test-channel-only seed) ----
