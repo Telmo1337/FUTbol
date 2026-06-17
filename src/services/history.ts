@@ -57,6 +57,7 @@ export async function loadHistory(
   tgUserId: string | null,
   name: string | null,
   golos = true,
+  assists = true,
 ): Promise<HistoryView> {
   const size = HISTORY_PAGE_SIZE;
 
@@ -79,7 +80,7 @@ export async function loadHistory(
           side: r.side,
           scorer: null,
           myGoals: ev.filter((e) => e.tgUserId === tgUserId && e.kind === 'G').length,
-          myAssists: ev.filter((e) => e.tgUserId === tgUserId && e.kind === 'A').length,
+          myAssists: assists ? ev.filter((e) => e.tgUserId === tgUserId && e.kind === 'A').length : 0,
         };
       }),
       page: p,

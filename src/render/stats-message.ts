@@ -29,7 +29,7 @@ function board(rows: PlayerStat[], value: (p: PlayerStat) => string): string[] {
   return rows.map((p, i) => `${rank(i)} ${esc(p.name)} — ${value(p)}`);
 }
 
-export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinceLabel: string | null, golos = true): string {
+export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinceLabel: string | null, golos = true, assists = true): string {
   if (stats.totalGames === 0) return [M.stats.title, '', M.stats.none].join('\n');
 
   const parts: string[] = [M.stats.title];
@@ -88,12 +88,14 @@ export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinc
   if (winStreak.length > 0)
     parts.push('', M.stats.winStreakTitle, ...board(winStreak, (p) => M.stats.winStreakLine(p.bestWinStreak)));
 
-  // ⚽ goleadores / 🅰️ assistências (feature-flagged; each skips until someone has one)
+  // ⚽ goleadores (golos flag) / 🅰️ assistências (golos + assists flag); each skips until earned
   if (golos) {
     const goals = topByGoals(stats, LEADERBOARD_TOP_N);
     if (goals.length > 0) parts.push('', M.stats.goalsTitle, ...board(goals, (p) => M.stats.goalsLine(p.goals)));
-    const assists = topByAssists(stats, LEADERBOARD_TOP_N);
-    if (assists.length > 0) parts.push('', M.stats.assistsTitle, ...board(assists, (p) => M.stats.assistsLine(p.assists)));
+    if (assists) {
+      const asb = topByAssists(stats, LEADERBOARD_TOP_N);
+      if (asb.length > 0) parts.push('', M.stats.assistsTitle, ...board(asb, (p) => M.stats.assistsLine(p.assists)));
+    }
   }
 
   // 👻 ghosts (always shown — fallback praises a clean week)
@@ -112,7 +114,7 @@ function rankSuffix(board: PlayerStat[], userId: string): string {
 }
 
 // Shared by /eu (private) and /stats jogador:@X (public) — same card, different visibility.
-export function renderPersonalCard(p: PlayerStat, stats: Stats, golos = true): string {
+export function renderPersonalCard(p: PlayerStat, stats: Stats, golos = true, assists = true): string {
   const parts: string[] = [M.eu.title(esc(p.name)), ''];
   if (stats.totalGames === 0 || (p.appearances === 0 && p.confirmedFor === 0 && p.ghosts === 0)) {
     parts.push(M.eu.none);
@@ -137,7 +139,7 @@ export function renderPersonalCard(p: PlayerStat, stats: Stats, golos = true): s
   }
   // ⚽/🅰️ lines (feature-flagged; only once this player has the respective events)
   if (golos && p.goals > 0) parts.push(M.eu.goals(p.goals) + rankSuffix(topByGoals(stats, n), p.tgUserId));
-  if (golos && p.assists > 0) parts.push(M.eu.assists(p.assists) + rankSuffix(topByAssists(stats, n), p.tgUserId));
+  if (golos && assists && p.assists > 0) parts.push(M.eu.assists(p.assists) + rankSuffix(topByAssists(stats, n), p.tgUserId));
   parts.push(M.eu.ghosts(p.ghosts));
   return parts.join('\n');
 }
@@ -149,7 +151,7 @@ function lead(a: string, b: string, av: number, bv: number, higherBetter = true)
   return aWins ? [`**${a}**`, b] : [a, `**${b}**`];
 }
 
-export function renderComparison(a: PlayerStat, b: PlayerStat, golos = true): string {
+export function renderComparison(a: PlayerStat, b: PlayerStat, golos = true, assists = true): string {
   const parts: string[] = [M.comparar.title(esc(a.name), esc(b.name)), ''];
 
   const [appA, appB] = lead(String(a.appearances), String(b.appearances), a.appearances, b.appearances);
@@ -176,8 +178,10 @@ export function renderComparison(a: PlayerStat, b: PlayerStat, golos = true): st
   if (golos) {
     const [gA, gB] = lead(String(a.goals), String(b.goals), a.goals, b.goals);
     parts.push(M.comparar.goals(gA, gB));
-    const [asA, asB] = lead(String(a.assists), String(b.assists), a.assists, b.assists);
-    parts.push(M.comparar.assists(asA, asB));
+    if (assists) {
+      const [asA, asB] = lead(String(a.assists), String(b.assists), a.assists, b.assists);
+      parts.push(M.comparar.assists(asA, asB));
+    }
   }
 
   const [ghA, ghB] = lead(String(a.ghosts), String(b.ghosts), a.ghosts, b.ghosts, false);
@@ -186,14 +190,14 @@ export function renderComparison(a: PlayerStat, b: PlayerStat, golos = true): st
   return parts.join('\n');
 }
 
-/** /topmarcadores — just the two boards (⚽ Goleadores + 🅰️ Assistências), with an empty state. */
-export function renderTopScorers(stats: Stats): string {
+/** /topmarcadores — the ⚽ Goleadores board (+ 🅰️ Assistências when enabled), with an empty state. */
+export function renderTopScorers(stats: Stats, assists = true): string {
   const goals = topByGoals(stats, LEADERBOARD_TOP_N);
-  const assists = topByAssists(stats, LEADERBOARD_TOP_N);
-  if (goals.length === 0 && assists.length === 0) return [M.stats.topTitle, '', M.stats.topNone].join('\n');
+  const asb = assists ? topByAssists(stats, LEADERBOARD_TOP_N) : [];
+  if (goals.length === 0 && asb.length === 0) return [M.stats.topTitle, '', M.stats.topNone].join('\n');
   const parts: string[] = [M.stats.topTitle];
   if (goals.length > 0) parts.push('', M.stats.goalsTitle, ...board(goals, (p) => M.stats.goalsLine(p.goals)));
-  if (assists.length > 0) parts.push('', M.stats.assistsTitle, ...board(assists, (p) => M.stats.assistsLine(p.assists)));
+  if (asb.length > 0) parts.push('', M.stats.assistsTitle, ...board(asb, (p) => M.stats.assistsLine(p.assists)));
   return parts.join('\n');
 }
 

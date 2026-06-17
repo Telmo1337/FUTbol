@@ -235,22 +235,19 @@ function captureSelectRow(gameId: number, event: EventKind, players: TeamMember[
   };
 }
 
-/** The admin's private (ephemeral) capture panel: ⚽ select, 🅰️ select, then undo/undo/done. */
-export function capturePanelComponents(gameId: number, players: TeamMember[]): (SelectRow | ActionRow)[] {
+/** The admin's private (ephemeral) capture panel. With `assists`, includes the 🅰️ select + undo. */
+export function capturePanelComponents(gameId: number, players: TeamMember[], assists = true): (SelectRow | ActionRow)[] {
   const rows: (SelectRow | ActionRow)[] = [];
   // A string select must carry 1–25 options — omit the selects entirely if nobody played
   // (defensive: today result_teams is always non-empty when a result card exists).
   if (players.length > 0) {
-    rows.push(captureSelectRow(gameId, 'G', players), captureSelectRow(gameId, 'A', players));
+    rows.push(captureSelectRow(gameId, 'G', players));
+    if (assists) rows.push(captureSelectRow(gameId, 'A', players));
   }
-  rows.push({
-    type: 1,
-    components: [
-      button(M.capture.undoGoal, `gguG:${gameId}`, STYLE.secondary),
-      button(M.capture.undoAssist, `gguA:${gameId}`, STYLE.secondary),
-      button(M.capture.done, `ggdone:${gameId}`, STYLE.success),
-    ],
-  });
+  const controls: Button[] = [button(M.capture.undoGoal, `gguG:${gameId}`, STYLE.secondary)];
+  if (assists) controls.push(button(M.capture.undoAssist, `gguA:${gameId}`, STYLE.secondary));
+  controls.push(button(M.capture.done, `ggdone:${gameId}`, STYLE.success));
+  rows.push({ type: 1, components: controls });
   return rows;
 }
 

@@ -12,7 +12,7 @@ import type { Env } from '../types';
 import type { Repo } from '../db/repo';
 import type { Sender } from './rest';
 import { M } from '../messages';
-import { golosEnabled, parseAdminIds } from '../util';
+import { assistsEnabled, golosEnabled, parseAdminIds } from '../util';
 import { capturePanelComponents, historyComponents, parseCb, teamsPanelComponents } from './components';
 import { boardEmbed } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
@@ -122,12 +122,12 @@ async function teamPanelData(repo: Repo, game: Game): Promise<object> {
   };
 }
 
-/** The admin's private (ephemeral) ⚽ capture panel: tallies embed + the two selects + undo/done. */
-async function capturePanelData(repo: Repo, game: Game): Promise<object> {
+/** The admin's private (ephemeral) ⚽ capture panel. `assists` toggles the 🅰️ select + tally. */
+async function capturePanelData(repo: Repo, game: Game, assists: boolean): Promise<object> {
   const state = await loadCaptureState(repo, game);
   return {
-    embeds: [boardEmbed(renderCapturePanel(state))],
-    components: capturePanelComponents(game.id, state.players),
+    embeds: [boardEmbed(renderCapturePanel(state, assists))],
+    components: capturePanelComponents(game.id, state.players, assists),
     flags: 64,
   };
 }
@@ -223,34 +223,35 @@ async function onCommand(
 
     case 'stats': {
       const golos = golosEnabled(env);
+      const assists = assistsEnabled(env);
       // /stats jogador:@X → that player's card (public); /stats alone → the group boards.
       const target = resolveUserOption(i, 'jogador');
       if (target) {
         const stats = await loadStats(repo, channelId);
-        return publicEmbed(renderPersonalCard(statFor(stats, target.tgUserId, target.displayName), stats, golos));
+        return publicEmbed(renderPersonalCard(statFor(stats, target.tgUserId, target.displayName), stats, golos, assists));
       }
       // Group boards: load once, aggregate all-time + this month from the same rows.
       const input = await loadStatsInput(repo, channelId);
       const stats = computeStats(input);
       const month = computeStats(input, monthWindow(now));
-      return publicEmbed(renderStats(stats, month, formatMonth(now), sinceLabel(stats.firstKickoff), golos));
+      return publicEmbed(renderStats(stats, month, formatMonth(now), sinceLabel(stats.firstKickoff), golos, assists));
     }
 
     case 'topmarcadores': {
       if (!golosEnabled(env)) return ephemeral(M.golosOff);
-      return publicEmbed(renderTopScorers(await loadStats(repo, channelId)));
+      return publicEmbed(renderTopScorers(await loadStats(repo, channelId), assistsEnabled(env)));
     }
 
     case 'eu': {
       const stats = await loadStats(repo, channelId);
       const name = player?.displayName ?? 'Jogador';
-      return ephemeralEmbed(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats, golosEnabled(env)));
+      return ephemeralEmbed(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats, golosEnabled(env), assistsEnabled(env)));
     }
 
     case 'historico': {
       // /historico jogador:@X → just that player's games; /historico alone → every game.
       const target = resolveUserOption(i, 'jogador');
-      const view = await loadHistory(repo, channelId, 0, target?.tgUserId ?? null, target?.displayName ?? null, golosEnabled(env));
+      const view = await loadHistory(repo, channelId, 0, target?.tgUserId ?? null, target?.displayName ?? null, golosEnabled(env), assistsEnabled(env));
       return reply({ type: 4, data: historyData(view) });
     }
 
@@ -260,7 +261,7 @@ async function onCommand(
       if (!a || !b) return ephemeral(M.cb.error);
       const stats = await loadStats(repo, channelId);
       return publicEmbed(
-        renderComparison(statFor(stats, a.tgUserId, a.displayName), statFor(stats, b.tgUserId, b.displayName), golosEnabled(env)),
+        renderComparison(statFor(stats, a.tgUserId, a.displayName), statFor(stats, b.tgUserId, b.displayName), golosEnabled(env), assistsEnabled(env)),
       );
     }
 
@@ -290,7 +291,7 @@ async function onComponent(
 
   // 📜 history ◀️/▶️: re-query the requested page and edit this (ephemeral) message in place.
   if (parsed.kind === 'historyPage') {
-    const view = await loadHistory(repo, channelId, parsed.page, parsed.tgUserId, null, golosEnabled(env));
+    const view = await loadHistory(repo, channelId, parsed.page, parsed.tgUserId, null, golosEnabled(env), assistsEnabled(env));
     return updateMsg(historyData(view));
   }
 
@@ -331,21 +332,23 @@ async function onComponent(
       return ok ? updateMsg({ content: M.cb.teamsPublished, embeds: [], components: [] }) : ephemeral(M.cb.teamsNeedBoth);
     }
     // ⚽ capture panel: open from the result card, +1 a scorer/assister, undo, or close to a summary.
+    const assists = assistsEnabled(env);
     if (parsed.kind === 'captureOpen') {
-      return reply({ type: 4, data: await capturePanelData(repo, game) });
+      return reply({ type: 4, data: await capturePanelData(repo, game, assists) });
     }
     if (parsed.kind === 'captureAdd') {
       const picked = i.data?.values?.[0]; // the select only offers squad members
-      if (picked) await repo.addGoalEvent(game.id, picked, parsed.event, now);
-      return updateMsg(await capturePanelData(repo, game));
+      // Ignore an assist add when assists are off (a stale 🅰️ select → no-op).
+      if (picked && (parsed.event === 'G' || assists)) await repo.addGoalEvent(game.id, picked, parsed.event, now);
+      return updateMsg(await capturePanelData(repo, game, assists));
     }
     if (parsed.kind === 'captureUndo') {
       await repo.undoLastGoalEvent(game.id, parsed.event);
-      return updateMsg(await capturePanelData(repo, game));
+      return updateMsg(await capturePanelData(repo, game, assists));
     }
     if (parsed.kind === 'captureDone') {
       const state = await loadCaptureState(repo, game);
-      return updateMsg({ content: '', embeds: [boardEmbed(renderCaptureSummary(state))], components: [] });
+      return updateMsg({ content: '', embeds: [boardEmbed(renderCaptureSummary(state, assists))], components: [] });
     }
     // resultOpen: the score modal (game id rides in the modal custom_id)
     if (!game.teamsLockedAt) return ephemeral(M.cb.resultNoTeams);
@@ -403,7 +406,9 @@ async function onModal(
     await recordResult(sender, repo, game, parsedResult.goalsA, parsedResult.goalsB, player.tgUserId, now, golos);
     // With the feature on, drop straight into the ⚽ capture panel (ephemeral, admin-only) so
     // golos/assists get filled now; otherwise just confirm the score was saved.
-    return golos ? reply({ type: 4, data: await capturePanelData(repo, game) }) : ephemeral(M.cb.resultSaved);
+    return golos
+      ? reply({ type: 4, data: await capturePanelData(repo, game, assistsEnabled(env)) })
+      : ephemeral(M.cb.resultSaved);
   }
 
   if (customId !== 'novojogo') return ephemeral(M.cb.error);
