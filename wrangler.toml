@@ -10,6 +10,8 @@ TZ = "Europe/Lisbon"
 # Master switch for the ⚽ golos/assistências feature (boards, capture panel, /topmarcadores).
 # "true" = on (default). Set to "false" to hide it all without a code change.
 GOLOS_ENABLED = "true"
+# Sub-switch for 🅰️ assistências only: "false" keeps goals but drops assists (subjective call).
+ASSISTS_ENABLED = "true"
 # Runtime values are set with `wrangler secret put` (kept out of this public repo):
 #   DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, ADMIN_IDS, GAME_CHANNEL_ID
 # GAME_CHANNEL_ID = the channel where the Sunday auto-game is posted; unset = feature off.

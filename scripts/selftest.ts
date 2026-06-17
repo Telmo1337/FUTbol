@@ -37,9 +37,9 @@ import { renderCapturePanel } from '../src/render/capture-message';
 import { seedTestGame } from '../src/services/testseed';
 import { loadHistory } from '../src/services/history';
 import { renderComparison, renderPersonalCard, renderStats, renderTopScorers } from '../src/render/stats-message';
-import { golosEnabled } from '../src/util';
+import { assistsEnabled, golosEnabled } from '../src/util';
 import { renderHistory } from '../src/render/history-message';
-import { historyComponents, parseCb } from '../src/discord/components';
+import { capturePanelComponents, historyComponents, parseCb } from '../src/discord/components';
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -295,6 +295,40 @@ check(
   'flag off: /historico hides the scorer (shown when on)',
   renderHistory(await loadHistory(repo, chatId, 0, null, null, true)).includes('⚽') &&
     !renderHistory(await loadHistory(repo, chatId, 0, null, null, false)).includes('⚽'),
+);
+
+// --- ASSISTS_ENABLED sub-flag: keep golos on, drop only 🅰️ assistências ---
+// chatId scorers: user 3 = 2 golos, user 4 = 1 golo, user 2 = 1 assist.
+check('assists flag: default on, explicit off values off', assistsEnabled({}) === true && !assistsEnabled({ ASSISTS_ENABLED: 'false' }) && !assistsEnabled({ ASSISTS_ENABLED: 'off' }));
+check(
+  'assists off: /stats keeps ⚽ Goleadores but drops 🅰️ Assistências board',
+  renderStats(sG, sG, 'junho', null, true, false).includes('⚽ **Goleadores**') &&
+    !renderStats(sG, sG, 'junho', null, true, false).includes('🅰️ **Assistências**') &&
+    renderStats(sG, sG, 'junho', null, true, true).includes('🅰️ **Assistências**'),
+);
+check(
+  'assists off: personal card drops the 🅰️ line (kept when on)',
+  renderPersonalCard(statFor(sG, '2', 'u2'), sG, true, true).includes('🅰️ Assistências') &&
+    !renderPersonalCard(statFor(sG, '2', 'u2'), sG, true, false).includes('🅰️ Assistências'),
+);
+check(
+  'assists off: comparison drops the 🅰️ row (kept when on)',
+  renderComparison(statFor(sG, '2', 'u2'), statFor(sG, '3', 'u3'), true, true).includes('🅰️ Assistências') &&
+    !renderComparison(statFor(sG, '2', 'u2'), statFor(sG, '3', 'u3'), true, false).includes('🅰️ Assistências'),
+);
+check(
+  'assists off: /topmarcadores drops the 🅰️ board (kept when on)',
+  renderTopScorers(sG, true).includes('🅰️ **Assistências**') && !renderTopScorers(sG, false).includes('🅰️ **Assistências**'),
+);
+const selectCount = (rows: { components: { type: number }[] }[]) => rows.filter((r) => r.components[0]?.type === 3).length;
+check(
+  'assists off: capture panel drops the 🅰️ select',
+  selectCount(capturePanelComponents(game.id, capState.players, true)) === 2 &&
+    selectCount(capturePanelComponents(game.id, capState.players, false)) === 1,
+);
+check(
+  'assists off: capture tally hides 🅰️ (shown when on)',
+  renderCapturePanel(capState, true).includes('🅰️×1') && !renderCapturePanel(capState, false).includes('🅰️×'),
 );
 
 // --- 📜 histórico: e2e page off the played game + pure render/pagination ---

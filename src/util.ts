@@ -40,3 +40,14 @@ export function golosEnabled(env: { GOLOS_ENABLED?: string }): boolean {
   const v = (env.GOLOS_ENABLED ?? '').trim().toLowerCase();
   return v !== 'false' && v !== '0' && v !== 'off' && v !== 'no';
 }
+
+/**
+ * Sub-switch for 🅰️ assistências only (the assist select, board, lines + /historico assist
+ * tally). ON by default; set ASSISTS_ENABLED off to drop assists while keeping goals — goals
+ * are objective (the ball went in), assists are a subjective manual call. Always AND this with
+ * golosEnabled at the call site: assists are part of the golos feature, so off-golos = off-assists.
+ */
+export function assistsEnabled(env: { ASSISTS_ENABLED?: string }): boolean {
+  const v = (env.ASSISTS_ENABLED ?? '').trim().toLowerCase();
+  return v !== 'false' && v !== '0' && v !== 'off' && v !== 'no';
+}

@@ -35,6 +35,11 @@ export interface Env {
    * a code change. See util.golosEnabled.
    */
   GOLOS_ENABLED?: string;
+  /**
+   * Sub-switch for 🅰️ assistências only. ON by default; set to "false"/"0"/"off" to keep
+   * goals but drop assists (which are a subjective manual call). See util.assistsEnabled.
+   */
+  ASSISTS_ENABLED?: string;
   TZ?: string;
 }
 
