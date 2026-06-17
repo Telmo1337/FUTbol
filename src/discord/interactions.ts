@@ -64,6 +64,14 @@ function playerFrom(i: Interaction): Player | null {
   return { tgUserId: u.id, displayName, username: u.username ?? null };
 }
 
+/** Resolve an INTEGER slash-command option to a number, or null if absent/invalid. */
+function resolveIntOption(i: Interaction, name: string): number | null {
+  const v = i.data?.options?.find((o) => o.name === name)?.value;
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Resolve a USER slash-command option into a target (id + display name), or null if absent. */
 function resolveUserOption(i: Interaction, name: string): { tgUserId: string; displayName: string } | null {
   const id = i.data?.options?.find((o) => o.name === name)?.value;
@@ -196,8 +204,9 @@ async function onCommand(
       if (!isAdmin(env, player?.tgUserId) || !player) return ephemeral(M.notAdmin);
       if (!env.TEST_CHANNEL_ID) return ephemeral(M.test.disabled);
       if (channelId !== env.TEST_CHANNEL_ID) return ephemeral(M.test.wrongChannel);
-      const n = await seedTestGame(sender, repo, channelId, player.tgUserId, now);
-      return ephemeral(M.test.created(n));
+      const count = resolveIntOption(i, 'jogos') ?? 1;
+      const res = await seedTestGame(sender, repo, channelId, player.tgUserId, now, count);
+      return ephemeral(res.games > 1 ? M.test.createdMany(res.games) : M.test.created(res.players));
     }
 
     case 'stats': {

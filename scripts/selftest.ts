@@ -30,6 +30,7 @@ import {
   reliabilityRawPct,
 } from '../src/core/stats';
 import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../src/services/teams';
+import { seedTestGame } from '../src/services/testseed';
 import { loadHistory } from '../src/services/history';
 import { renderComparison, renderPersonalCard, renderStats } from '../src/render/stats-message';
 import { renderHistory } from '../src/render/history-message';
@@ -67,6 +68,10 @@ const NOW = Date.UTC(2026, 5, 15, 12, 0, 0); // 2026-06-15 12:00 UTC
 check('parseDateTime parses "20/06 18:00"', parseDateTime('20/06 18:00', NOW) !== null);
 check('parseDateTime rejects garbage', parseDateTime('amanhã às tantas', NOW) === null);
 check('formatWhen produces a label', /\d{2}:\d{2}/.test(formatWhen(NOW)));
+// NOW = Mon 2026-06-15 12:00 UTC → Lisbon 13:00. Deterministic pt-PT labels (Workers-ICU-proof).
+check('formatDay: pt-PT short label', formatDay(NOW) === 'Seg, 15 jun');
+check('formatWhen: pt-PT short + time', formatWhen(NOW) === 'Seg, 15 jun · 13:00');
+check('formatMonth: pt-PT long lowercase', formatMonth(NOW) === 'junho');
 
 // vote board shows who voted what (names listed under each slot)
 const demoSlots = [{ id: 7, gameId: 1, kickoffAt: NOW, label: 'Sáb 18:00', sortOrder: 0 }];
@@ -284,6 +289,24 @@ check('parseCb hg round-trip', JSON.stringify(parseCb('hg:2')) === JSON.stringif
 check('parseCb hp round-trip', JSON.stringify(parseCb('hp:1:123')) === JSON.stringify({ kind: 'historyPage', page: 1, tgUserId: '123' }));
 check('parseCb rejects non-numeric hp user', parseCb('hp:1:abc') === null);
 check('formatDay: date-only label (no time)', formatDay(NOW).length > 0 && !formatDay(NOW).includes(':'));
+
+// --- 📜 histórico paginado: seed several games (/testjogo jogos:6) and walk the pages ---
+const histChat = `hist-${Date.now()}`;
+const seeded = await seedTestGame(sender, repo, histChat, 'admin', NOW, 6);
+check('seed: /testjogo jogos:6 creates 6 complete games', seeded.games === 6 && seeded.players === 8);
+const hp0 = await loadHistory(repo, histChat, 0, null, null);
+check('history: 6 games → 2 pages, first page full (5)', hp0.totalPages === 2 && hp0.entries.length === 5);
+check('history: newest-first ordering', hp0.entries.every((e, k) => k === 0 || hp0.entries[k - 1].kickoffAt >= e.kickoffAt));
+check('history: every seeded game has a score', hp0.entries.every((e) => e.goalsA != null && e.goalsB != null));
+const hp1 = await loadHistory(repo, histChat, 1, null, null);
+check('history: second page has the remaining 1', hp1.page === 1 && hp1.entries.length === 1);
+check('history: page clamps past the end', (await loadHistory(repo, histChat, 99, null, null)).page === 1);
+check('history pager: 2 pages → arrow row present', historyComponents(hp0.page, hp0.totalPages, null).length === 1);
+const histPerson = await loadHistory(repo, histChat, 0, '900000000000000001', 'Tester 1'); // Alpha, present in all 6
+check('history person: present in all 6 (2 pages), side known each', histPerson.totalPages === 2 && histPerson.entries.every((e) => e.side != null));
+// single seed still wipes + leaves exactly one game (the original /testjogo behaviour)
+const one = await seedTestGame(sender, repo, histChat, 'admin', NOW, 1);
+check('seed: /testjogo (no count) wipes to a single game', one.games === 1 && (await loadHistory(repo, histChat, 0, null, null)).totalPages === 1);
 
 // --- pure computeStats: subs, reliability %, streak reset ---
 // cap = 1, so each game's confirmed squad is the single earliest IN.
