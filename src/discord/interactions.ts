@@ -13,7 +13,7 @@ import type { Repo } from '../db/repo';
 import type { Sender } from './rest';
 import { M } from '../messages';
 import { parseAdminIds } from '../util';
-import { parseCb, teamsPanelComponents } from './components';
+import { historyComponents, parseCb, teamsPanelComponents } from './components';
 import { boardEmbed } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
 import { resultModal, parseResultFields } from './teams';
@@ -21,9 +21,11 @@ import * as games from '../services/games';
 import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../services/teams';
 import { seedTestGame } from '../services/testseed';
 import { loadStats, loadStatsInput } from '../services/stats';
+import { loadHistory, type HistoryView } from '../services/history';
 import { computeStats, statFor } from '../core/stats';
 import { formatMonth, monthWindow } from '../core/time';
 import { renderComparison, renderPersonalCard, renderStats, sinceLabel } from '../render/stats-message';
+import { renderHistory } from '../render/history-message';
 import { renderTeamsPanel } from '../render/teams-message';
 import type { Game } from '../types';
 
@@ -90,6 +92,15 @@ const modal = (data: object) => reply({ type: 9, data });
 const silentAck = () => reply({ type: 6 });
 // Type 7 = UPDATE_MESSAGE: edit the message the tapped component lives on (the private panel).
 const updateMsg = (data: object) => reply({ type: 7, data });
+
+/** An ephemeral 📜 history page: embed + the ◀️/▶️ row (omitted on a single page). */
+function historyData(view: HistoryView): object {
+  return {
+    embeds: [boardEmbed(renderHistory(view))],
+    components: historyComponents(view.page, view.totalPages, view.tgUserId),
+    flags: 64,
+  };
+}
 
 /** The admin's private (ephemeral) team-formation panel: buckets embed + the two selects + lock. */
 async function teamPanelData(repo: Repo, game: Game): Promise<object> {
@@ -209,6 +220,13 @@ async function onCommand(
       return ephemeralEmbed(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats));
     }
 
+    case 'historico': {
+      // /historico jogador:@X → just that player's games; /historico alone → every game.
+      const target = resolveUserOption(i, 'jogador');
+      const view = await loadHistory(repo, channelId, 0, target?.tgUserId ?? null, target?.displayName ?? null);
+      return reply({ type: 4, data: historyData(view) });
+    }
+
     case 'comparar': {
       const a = resolveUserOption(i, 'a');
       const b = resolveUserOption(i, 'b');
@@ -241,6 +259,12 @@ async function onComponent(
   if (parsed.kind === 'vote') {
     await games.handleVote(sender, repo, parsed.gameId, parsed.slotId, player.tgUserId, now);
     return silentAck();
+  }
+
+  // 📜 history ◀️/▶️: re-query the requested page and edit this (ephemeral) message in place.
+  if (parsed.kind === 'historyPage') {
+    const view = await loadHistory(repo, channelId, parsed.page, parsed.tgUserId, null);
+    return updateMsg(historyData(view));
   }
 
   // Team-formation + result controls — all admin-only, all reply directly (panel / modal / update).

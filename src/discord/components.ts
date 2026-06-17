@@ -14,12 +14,24 @@ export type ParsedCb =
   | { kind: 'teamSelect'; gameId: number; side: ResultSide } // admin picks Alpha/Beta in the panel
   | { kind: 'teamLock'; gameId: number } // admin publishes the teams
   | { kind: 'teamEdit'; gameId: number } // admin reopens the panel from the public board
-  | { kind: 'resultOpen'; gameId: number }; // admin opens the score modal
+  | { kind: 'resultOpen'; gameId: number } // admin opens the score modal
+  | { kind: 'historyPage'; page: number; tgUserId: string | null }; // ◀️/▶️ in /historico
 
 const RSVP_CODE: Record<string, RsvpStatus | undefined> = { I: 'IN', O: 'OUT', M: 'MAYBE' };
 
 export function parseCb(data: string): ParsedCb | null {
   const p = data.split(':');
+  // 📜 history pagination: hg:<page> (global) or hp:<page>:<userId> (per-person).
+  // Parsed before the gameId guard below — here p[1] is a page number, not a game id.
+  if (p[0] === 'hg' && p.length === 2) {
+    const page = Number(p[1]);
+    return Number.isFinite(page) ? { kind: 'historyPage', page, tgUserId: null } : null;
+  }
+  if (p[0] === 'hp' && p.length === 3 && /^\d+$/.test(p[2])) {
+    // tgUserId is a Discord snowflake (digits only) — same guard as the unghost button.
+    const page = Number(p[1]);
+    return Number.isFinite(page) ? { kind: 'historyPage', page, tgUserId: p[2] } : null;
+  }
   const gameId = Number(p[1]);
   if (!Number.isFinite(gameId)) return null;
   if (p[0] === 'v' && p.length === 3) {
@@ -61,6 +73,7 @@ interface Button {
   style: Style;
   label: string;
   custom_id: string;
+  disabled?: boolean;
 }
 interface ActionRow {
   type: 1;
@@ -187,4 +200,31 @@ export function teamsBoardComponents(gameId: number): ActionRow[] {
       ],
     },
   ];
+}
+
+// ---- 📜 history pagination ----
+/**
+ * The ◀️ · Pág. X/Y · ▶️ row for /historico. Empty when there's a single page (nothing to
+ * page). The page number rides in each arrow's custom_id (hg:<page> / hp:<page>:<userId>);
+ * the middle indicator is a disabled button (custom_id 'noop' — disabled buttons never fire).
+ */
+export function historyComponents(page: number, totalPages: number, tgUserId: string | null): ActionRow[] {
+  if (totalPages <= 1) return [];
+  const id = (p: number) => (tgUserId ? `hp:${p}:${tgUserId}` : `hg:${p}`);
+  const prev: Button = { type: 2, style: STYLE.secondary, label: M.history.prev, custom_id: id(page - 1), disabled: page <= 0 };
+  const indicator: Button = {
+    type: 2,
+    style: STYLE.secondary,
+    label: M.history.pageIndicator(page + 1, totalPages),
+    custom_id: 'noop',
+    disabled: true,
+  };
+  const next: Button = {
+    type: 2,
+    style: STYLE.secondary,
+    label: M.history.next,
+    custom_id: id(page + 1),
+    disabled: page >= totalPages - 1,
+  };
+  return [{ type: 1, components: [prev, indicator, next] }];
 }

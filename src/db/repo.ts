@@ -363,6 +363,79 @@ export function createRepo(d1: D1Database) {
         .from(resultTeams)
         .where(inArray(resultTeams.gameId, gameIds));
     },
+
+    // ---------- 📜 history (paginated, per chat) ----------
+    /** This player's display name, or null if we've never seen them. For paginating per-person history. */
+    async getPlayerName(tgUserId: string): Promise<string | null> {
+      const row = await db.select({ name: players.displayName }).from(players).where(eq(players.tgUserId, tgUserId)).get();
+      return row?.name ?? null;
+    },
+
+    /** Count of PLAYED games in a chat (same innerJoin as the page query, so the total matches). */
+    async countPlayedGames(chatId: string): Promise<number> {
+      const row = await db
+        .select({ c: sql<number>`count(*)` })
+        .from(games)
+        .innerJoin(candidateSlots, eq(candidateSlots.id, games.winningSlotId))
+        .where(and(eq(games.chatId, chatId), eq(games.status, 'PLAYED')))
+        .get();
+      return row?.c ?? 0;
+    },
+
+    /** One page of PLAYED games, newest first, with the score left-joined (null when not recorded). */
+    async getHistoryPage(
+      chatId: string,
+      limit: number,
+      offset: number,
+    ): Promise<{ id: number; kickoffAt: number; goalsA: number | null; goalsB: number | null }[]> {
+      return db
+        .select({ id: games.id, kickoffAt: candidateSlots.kickoffAt, goalsA: results.goalsA, goalsB: results.goalsB })
+        .from(games)
+        .innerJoin(candidateSlots, eq(candidateSlots.id, games.winningSlotId))
+        .leftJoin(results, eq(results.gameId, games.id))
+        .where(and(eq(games.chatId, chatId), eq(games.status, 'PLAYED')))
+        .orderBy(desc(candidateSlots.kickoffAt))
+        .limit(limit)
+        .offset(offset);
+    },
+
+    /** Count of PLAYED games in a chat where this player was present (has a check-in). */
+    async countPlayedGamesForPlayer(chatId: string, tgUserId: string): Promise<number> {
+      const row = await db
+        .select({ c: sql<number>`count(*)` })
+        .from(games)
+        .innerJoin(candidateSlots, eq(candidateSlots.id, games.winningSlotId))
+        .innerJoin(checkins, and(eq(checkins.gameId, games.id), eq(checkins.tgUserId, tgUserId)))
+        .where(and(eq(games.chatId, chatId), eq(games.status, 'PLAYED')))
+        .get();
+      return row?.c ?? 0;
+    },
+
+    /** One page of a player's PLAYED games (present = has a check-in), newest first, with their side + the score. */
+    async getHistoryPageForPlayer(
+      chatId: string,
+      tgUserId: string,
+      limit: number,
+      offset: number,
+    ): Promise<{ id: number; kickoffAt: number; goalsA: number | null; goalsB: number | null; side: ResultSide | null }[]> {
+      return db
+        .select({
+          id: games.id,
+          kickoffAt: candidateSlots.kickoffAt,
+          goalsA: results.goalsA,
+          goalsB: results.goalsB,
+          side: resultTeams.side,
+        })
+        .from(games)
+        .innerJoin(candidateSlots, eq(candidateSlots.id, games.winningSlotId))
+        .innerJoin(checkins, and(eq(checkins.gameId, games.id), eq(checkins.tgUserId, tgUserId)))
+        .leftJoin(results, eq(results.gameId, games.id))
+        .leftJoin(resultTeams, and(eq(resultTeams.gameId, games.id), eq(resultTeams.tgUserId, tgUserId)))
+        .where(and(eq(games.chatId, chatId), eq(games.status, 'PLAYED')))
+        .orderBy(desc(candidateSlots.kickoffAt))
+        .limit(limit)
+        .offset(offset);
+    },
   };
 }
 

@@ -5,6 +5,7 @@ import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
 import type { Game, ResultSide } from '../types';
 import { splitSquad } from '../core/rsvp';
+import { formatDay } from '../core/time';
 import { boardEmbed } from '../discord/embeds';
 import { teamsBoardComponents, teamsPlaceholderComponents, type TeamMember } from '../discord/components';
 import { renderResultCard, renderTeamsBoard, renderTeamsPlaceholder, type TeamsView } from '../render/teams-message';
@@ -88,5 +89,8 @@ export async function recordResult(
 ): Promise<void> {
   await repo.saveResult(game.id, goalsA, goalsB, recordedBy, now);
   const state = await loadTeamsState(repo, game);
-  await sendBoard(api, game.chatId, renderResultCard(state.view, goalsA, goalsB));
+  // Date the card from the winning slot's kickoff, so it's always clear which game this is.
+  const slot = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
+  const dayLabel = slot ? formatDay(slot.kickoffAt) : '';
+  await sendBoard(api, game.chatId, renderResultCard(state.view, goalsA, goalsB, dayLabel));
 }

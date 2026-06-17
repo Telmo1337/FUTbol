@@ -38,11 +38,11 @@ export function renderTeamsBoard(v: TeamsView): string {
   return [M.teams.boardTitle, '', ...buckets(v), '', M.teams.publishedHint].join('\n');
 }
 
-/** The post-game result card (score + winner + the two line-ups). */
-export function renderResultCard(v: TeamsView, goalsA: number, goalsB: number): string {
+/** The post-game result card (score + winner + the two line-ups). `dayLabel` dates the title. */
+export function renderResultCard(v: TeamsView, goalsA: number, goalsB: number, dayLabel = ''): string {
   const winner = goalsA > goalsB ? M.result.winAlpha : goalsA < goalsB ? M.result.winBeta : M.result.draw;
   return [
-    M.result.cardTitle,
+    M.result.cardTitle(dayLabel),
     '',
     M.result.score(goalsA, goalsB),
     winner,

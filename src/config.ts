@@ -28,6 +28,9 @@ export const LEADERBOARD_TOP_N = 5;
 /** How many names to show in the compact "Este mês" mini-board. */
 export const MONTH_TOP_N = 3;
 
+/** How many games to show per page of the 📜 /historico list. */
+export const HISTORY_PAGE_SIZE = 5;
+
 /**
  * 🏆 Jogador do Mês. A composite score over THIS MONTH's stats — appearances dominate,
  * reliability fine-tunes, the month's best streak rewards consistency, ghosts hurt:

@@ -37,6 +37,12 @@ export function formatWhen(ms: number): string {
   return `${cap(stripDot(p.weekday ?? ''))}, ${p.day} ${stripDot(p.month ?? '')} · ${p.hour}:${p.minute}`;
 }
 
+/** Date-only pt-PT label (no time), e.g. "Sáb, 14 jun" — used in the 📜 histórico. */
+export function formatDay(ms: number): string {
+  const p = partsOf(ms);
+  return `${cap(stripDot(p.weekday ?? ''))}, ${p.day} ${stripDot(p.month ?? '')}`;
+}
+
 /** pt-PT month name for a moment, e.g. "junho" (lowercase, as Portuguese writes months). */
 export function formatMonth(ms: number): string {
   return new Intl.DateTimeFormat(LOCALE, { timeZone: TIMEZONE, month: 'long' }).format(new Date(ms));

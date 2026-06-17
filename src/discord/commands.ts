@@ -48,6 +48,11 @@ export const COMMANDS: Command[] = [
       { type: USER, name: 'b', description: 'Segundo jogador', required: true },
     ],
   },
+  {
+    name: 'historico',
+    description: 'Ver o histórico de jogos (todos, ou só de um jogador)',
+    options: [{ type: USER, name: 'jogador', description: 'Ver só os jogos deste jogador', required: false }],
+  },
   { name: 'meuid', description: 'Ver o teu ID de Discord' },
   { name: 'ajuda', description: 'Lista de comandos' },
 ];
