@@ -204,6 +204,7 @@ export const M = {
     disabled: '🔒 O `/testjogo` está desativado. Define `TEST_CHANNEL_ID` para o ativar.',
     wrongChannel: '🔒 O `/testjogo` só corre no canal de testes.',
     created: (n: number) => `🧪 Jogo de teste criado com ${n} jogadores confirmados. As equipas estão no canal 👇`,
+    createdMany: (n: number) => `🧪 ${n} jogos de teste criados (com equipas e resultado). Folheia com \`/historico\` 📜`,
   },
 
   // ---- /stats group leaderboard ----

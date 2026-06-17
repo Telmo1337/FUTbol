@@ -1,6 +1,6 @@
 // Clock + Europe/Lisbon date handling. All timestamps elsewhere are unix-ms UTC;
 // conversion to/from local wall-clock happens only here.
-import { LOCALE, TIMEZONE } from '../config';
+import { TIMEZONE } from '../config';
 
 export interface Clock {
   now(): number;
@@ -9,43 +9,31 @@ export const systemClock: Clock = { now: () => Date.now() };
 
 const DAY_MS = 86_400_000;
 
-function cap(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-function stripDot(s: string): string {
-  return s.replace(/\.$/, '');
-}
+// pt-PT calendar labels, indexed directly. The Cloudflare Workers runtime ships a reduced ICU
+// dataset that renders pt-PT `weekday:'short'`/`month:'short'` as the FULL weekday + a NUMERIC
+// month ("Quarta, 17 06"), so we build the abbreviations ourselves — identical in local Node and
+// in production. Indices match lisbonParts: weekday 1=Mon..7=Sun, month 1=Jan..12=Dec.
+const WEEKDAY_SHORT_PT = ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+const MONTH_SHORT_PT = ['', 'jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const MONTH_LONG_PT = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
-function partsOf(ms: number): Record<string, string> {
-  const dtf = new Intl.DateTimeFormat(LOCALE, {
-    timeZone: TIMEZONE,
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  const out: Record<string, string> = {};
-  for (const p of dtf.formatToParts(new Date(ms))) out[p.type] = p.value;
-  return out;
-}
+const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-/** Pretty pt-PT label for a moment, e.g. "Sáb, 14 jun · 20:00". */
+/** Pretty pt-PT label for a moment, e.g. "Sáb, 14 jun · 20:00" (Lisbon wall-clock, DST-safe). */
 export function formatWhen(ms: number): string {
-  const p = partsOf(ms);
-  return `${cap(stripDot(p.weekday ?? ''))}, ${p.day} ${stripDot(p.month ?? '')} · ${p.hour}:${p.minute}`;
+  const p = lisbonParts(ms);
+  return `${WEEKDAY_SHORT_PT[p.weekday]}, ${pad2(p.day)} ${MONTH_SHORT_PT[p.month]} · ${pad2(p.hour)}:${pad2(p.minute)}`;
 }
 
 /** Date-only pt-PT label (no time), e.g. "Sáb, 14 jun" — used in the 📜 histórico. */
 export function formatDay(ms: number): string {
-  const p = partsOf(ms);
-  return `${cap(stripDot(p.weekday ?? ''))}, ${p.day} ${stripDot(p.month ?? '')}`;
+  const p = lisbonParts(ms);
+  return `${WEEKDAY_SHORT_PT[p.weekday]}, ${pad2(p.day)} ${MONTH_SHORT_PT[p.month]}`;
 }
 
 /** pt-PT month name for a moment, e.g. "junho" (lowercase, as Portuguese writes months). */
 export function formatMonth(ms: number): string {
-  return new Intl.DateTimeFormat(LOCALE, { timeZone: TIMEZONE, month: 'long' }).format(new Date(ms));
+  return MONTH_LONG_PT[lisbonParts(ms).month];
 }
 
 /**

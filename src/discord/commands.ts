@@ -4,10 +4,12 @@
 // caller mentions/chooses players instead of typing names.
 
 interface CommandOption {
-  type: number; // Discord application command option type (6 = USER)
+  type: number; // Discord application command option type (4 = INTEGER, 6 = USER)
   name: string;
   description: string;
   required?: boolean;
+  min_value?: number; // INTEGER option bounds (Discord enforces them in the picker)
+  max_value?: number;
 }
 interface Command {
   name: string;
@@ -20,6 +22,7 @@ interface Command {
 }
 
 const USER = 6;
+const INTEGER = 4;
 const ADMIN_ONLY = '0'; // see Command.default_member_permissions above
 
 export const COMMANDS: Command[] = [
@@ -31,8 +34,18 @@ export const COMMANDS: Command[] = [
   { name: 'resultado', description: 'Registar o placar do último jogo (só admin)', default_member_permissions: ADMIN_ONLY },
   {
     name: 'testjogo',
-    description: 'Criar um jogo de teste com jogadores falsos (só canal de teste)',
+    description: 'Criar jogo(s) de teste com jogadores falsos (só canal de teste)',
     default_member_permissions: ADMIN_ONLY,
+    options: [
+      {
+        type: INTEGER,
+        name: 'jogos',
+        description: 'Quantos jogos semear (1–12; >1 = vários, já com resultado)',
+        required: false,
+        min_value: 1,
+        max_value: 12,
+      },
+    ],
   },
   {
     name: 'stats',
