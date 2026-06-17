@@ -20,6 +20,7 @@ export const M = {
     '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
     '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
     '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
+    '`/topmarcadores` — melhores marcadores e assistentes ⚽\n' +
     '`/historico` — histórico de jogos (todos ou de um jogador) 📜\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem',
@@ -31,6 +32,7 @@ export const M = {
     '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
     '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
     '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
+    '`/topmarcadores` — melhores marcadores e assistentes ⚽\n' +
     '`/historico` — histórico de jogos (todos ou de um jogador) 📜\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem\n\n' +
@@ -46,6 +48,9 @@ export const M = {
     'Para te tornares admin, mete este id em `ADMIN_IDS` (ver README).',
 
   notAdmin: '🔒 Só o admin pode fazer isto.',
+
+  // Shown when the ⚽ golos/assistências feature is switched off (GOLOS_ENABLED=false).
+  golosOff: '⚽ A contagem de golos e assistências está desativada de momento.',
 
   novojogoUsage:
     '📝 **Como abrir um jogo** *(só admin)*\n\n' +
@@ -136,6 +141,7 @@ export const M = {
     teamsNeedBoth: '⚠️ Precisas de pelo menos um jogador em cada equipa.',
     teamsPublished: 'Equipas publicadas no canal ✅',
     resultNoTeams: '⚠️ Este jogo ainda não tem equipas fechadas.',
+    resultSaved: 'Resultado registado ✅',
     error: 'Algo correu mal 😬',
   },
 
@@ -269,6 +275,9 @@ export const M = {
     goalsLine: (n: number) => `${n} ${n === 1 ? 'golo' : 'golos'}`,
     assistsTitle: '🅰️ **Assistências**',
     assistsLine: (n: number) => `${n} ${n === 1 ? 'assistência' : 'assistências'}`,
+    // ---- /topmarcadores (só os dois quadros, à parte do /stats cheio) ----
+    topTitle: '⚽ **Marcadores & Assistências**',
+    topNone: 'Ainda não há golos nem assistências registados. Aparecem aqui depois do primeiro jogo com marcadores. ⚽',
   },
 
   // ---- /eu personal card ----

@@ -29,3 +29,14 @@ export function parseAdminIds(raw: string | undefined): Set<string> {
   }
   return set;
 }
+
+/**
+ * Master switch for the ⚽ golos/assistências feature (capture panel, /stats boards,
+ * /eu & /comparar lines, /historico scorer, /topmarcadores). ON unless GOLOS_ENABLED is
+ * explicitly off ("false"/"0"/"off"/"no") — so it defaults on and you flip the env var to
+ * disable, no code change. Past events are kept while off and reappear when re-enabled.
+ */
+export function golosEnabled(env: { GOLOS_ENABLED?: string }): boolean {
+  const v = (env.GOLOS_ENABLED ?? '').trim().toLowerCase();
+  return v !== 'false' && v !== '0' && v !== 'off' && v !== 'no';
+}

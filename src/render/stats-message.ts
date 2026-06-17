@@ -29,7 +29,7 @@ function board(rows: PlayerStat[], value: (p: PlayerStat) => string): string[] {
   return rows.map((p, i) => `${rank(i)} ${esc(p.name)} — ${value(p)}`);
 }
 
-export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinceLabel: string | null): string {
+export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinceLabel: string | null, golos = true): string {
   if (stats.totalGames === 0) return [M.stats.title, '', M.stats.none].join('\n');
 
   const parts: string[] = [M.stats.title];
@@ -88,13 +88,13 @@ export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinc
   if (winStreak.length > 0)
     parts.push('', M.stats.winStreakTitle, ...board(winStreak, (p) => M.stats.winStreakLine(p.bestWinStreak)));
 
-  // ⚽ goleadores (skip until someone has a goal)
-  const goals = topByGoals(stats, LEADERBOARD_TOP_N);
-  if (goals.length > 0) parts.push('', M.stats.goalsTitle, ...board(goals, (p) => M.stats.goalsLine(p.goals)));
-
-  // 🅰️ assistências (skip until someone has an assist)
-  const assists = topByAssists(stats, LEADERBOARD_TOP_N);
-  if (assists.length > 0) parts.push('', M.stats.assistsTitle, ...board(assists, (p) => M.stats.assistsLine(p.assists)));
+  // ⚽ goleadores / 🅰️ assistências (feature-flagged; each skips until someone has one)
+  if (golos) {
+    const goals = topByGoals(stats, LEADERBOARD_TOP_N);
+    if (goals.length > 0) parts.push('', M.stats.goalsTitle, ...board(goals, (p) => M.stats.goalsLine(p.goals)));
+    const assists = topByAssists(stats, LEADERBOARD_TOP_N);
+    if (assists.length > 0) parts.push('', M.stats.assistsTitle, ...board(assists, (p) => M.stats.assistsLine(p.assists)));
+  }
 
   // 👻 ghosts (always shown — fallback praises a clean week)
   parts.push('', M.stats.ghostsTitle);
@@ -112,7 +112,7 @@ function rankSuffix(board: PlayerStat[], userId: string): string {
 }
 
 // Shared by /eu (private) and /stats jogador:@X (public) — same card, different visibility.
-export function renderPersonalCard(p: PlayerStat, stats: Stats): string {
+export function renderPersonalCard(p: PlayerStat, stats: Stats, golos = true): string {
   const parts: string[] = [M.eu.title(esc(p.name)), ''];
   if (stats.totalGames === 0 || (p.appearances === 0 && p.confirmedFor === 0 && p.ghosts === 0)) {
     parts.push(M.eu.none);
@@ -135,9 +135,9 @@ export function renderPersonalCard(p: PlayerStat, stats: Stats): string {
     if (p.winPct != null) parts.push(M.eu.winPct(p.winPct) + rankSuffix(topByWinPct(stats, n), p.tgUserId));
     parts.push(M.eu.winStreak(p.currentWinStreak, p.bestWinStreak) + rankSuffix(topByBestWinStreak(stats, n), p.tgUserId));
   }
-  // ⚽/🅰️ lines (only once this player has the respective events)
-  if (p.goals > 0) parts.push(M.eu.goals(p.goals) + rankSuffix(topByGoals(stats, n), p.tgUserId));
-  if (p.assists > 0) parts.push(M.eu.assists(p.assists) + rankSuffix(topByAssists(stats, n), p.tgUserId));
+  // ⚽/🅰️ lines (feature-flagged; only once this player has the respective events)
+  if (golos && p.goals > 0) parts.push(M.eu.goals(p.goals) + rankSuffix(topByGoals(stats, n), p.tgUserId));
+  if (golos && p.assists > 0) parts.push(M.eu.assists(p.assists) + rankSuffix(topByAssists(stats, n), p.tgUserId));
   parts.push(M.eu.ghosts(p.ghosts));
   return parts.join('\n');
 }
@@ -149,7 +149,7 @@ function lead(a: string, b: string, av: number, bv: number, higherBetter = true)
   return aWins ? [`**${a}**`, b] : [a, `**${b}**`];
 }
 
-export function renderComparison(a: PlayerStat, b: PlayerStat): string {
+export function renderComparison(a: PlayerStat, b: PlayerStat, golos = true): string {
   const parts: string[] = [M.comparar.title(esc(a.name), esc(b.name)), ''];
 
   const [appA, appB] = lead(String(a.appearances), String(b.appearances), a.appearances, b.appearances);
@@ -173,15 +173,27 @@ export function renderComparison(a: PlayerStat, b: PlayerStat): string {
   const [wsA, wsB] = lead(String(a.currentWinStreak), String(b.currentWinStreak), a.currentWinStreak, b.currentWinStreak);
   parts.push(M.comparar.winStreak(wsA, wsB, a.bestWinStreak, b.bestWinStreak));
 
-  const [gA, gB] = lead(String(a.goals), String(b.goals), a.goals, b.goals);
-  parts.push(M.comparar.goals(gA, gB));
-
-  const [asA, asB] = lead(String(a.assists), String(b.assists), a.assists, b.assists);
-  parts.push(M.comparar.assists(asA, asB));
+  if (golos) {
+    const [gA, gB] = lead(String(a.goals), String(b.goals), a.goals, b.goals);
+    parts.push(M.comparar.goals(gA, gB));
+    const [asA, asB] = lead(String(a.assists), String(b.assists), a.assists, b.assists);
+    parts.push(M.comparar.assists(asA, asB));
+  }
 
   const [ghA, ghB] = lead(String(a.ghosts), String(b.ghosts), a.ghosts, b.ghosts, false);
   parts.push(M.comparar.ghosts(ghA, ghB));
 
+  return parts.join('\n');
+}
+
+/** /topmarcadores — just the two boards (⚽ Goleadores + 🅰️ Assistências), with an empty state. */
+export function renderTopScorers(stats: Stats): string {
+  const goals = topByGoals(stats, LEADERBOARD_TOP_N);
+  const assists = topByAssists(stats, LEADERBOARD_TOP_N);
+  if (goals.length === 0 && assists.length === 0) return [M.stats.topTitle, '', M.stats.topNone].join('\n');
+  const parts: string[] = [M.stats.topTitle];
+  if (goals.length > 0) parts.push('', M.stats.goalsTitle, ...board(goals, (p) => M.stats.goalsLine(p.goals)));
+  if (assists.length > 0) parts.push('', M.stats.assistsTitle, ...board(assists, (p) => M.stats.assistsLine(p.assists)));
   return parts.join('\n');
 }
 

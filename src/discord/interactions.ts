@@ -12,7 +12,7 @@ import type { Env } from '../types';
 import type { Repo } from '../db/repo';
 import type { Sender } from './rest';
 import { M } from '../messages';
-import { parseAdminIds } from '../util';
+import { golosEnabled, parseAdminIds } from '../util';
 import { capturePanelComponents, historyComponents, parseCb, teamsPanelComponents } from './components';
 import { boardEmbed } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
@@ -25,7 +25,7 @@ import { loadStats, loadStatsInput } from '../services/stats';
 import { loadHistory, type HistoryView } from '../services/history';
 import { computeStats, statFor } from '../core/stats';
 import { formatMonth, monthWindow } from '../core/time';
-import { renderComparison, renderPersonalCard, renderStats, sinceLabel } from '../render/stats-message';
+import { renderComparison, renderPersonalCard, renderStats, renderTopScorers, sinceLabel } from '../render/stats-message';
 import { renderHistory } from '../render/history-message';
 import { renderTeamsPanel } from '../render/teams-message';
 import { renderCapturePanel, renderCaptureSummary } from '../render/capture-message';
@@ -222,29 +222,35 @@ async function onCommand(
     }
 
     case 'stats': {
+      const golos = golosEnabled(env);
       // /stats jogador:@X → that player's card (public); /stats alone → the group boards.
       const target = resolveUserOption(i, 'jogador');
       if (target) {
         const stats = await loadStats(repo, channelId);
-        return publicEmbed(renderPersonalCard(statFor(stats, target.tgUserId, target.displayName), stats));
+        return publicEmbed(renderPersonalCard(statFor(stats, target.tgUserId, target.displayName), stats, golos));
       }
       // Group boards: load once, aggregate all-time + this month from the same rows.
       const input = await loadStatsInput(repo, channelId);
       const stats = computeStats(input);
       const month = computeStats(input, monthWindow(now));
-      return publicEmbed(renderStats(stats, month, formatMonth(now), sinceLabel(stats.firstKickoff)));
+      return publicEmbed(renderStats(stats, month, formatMonth(now), sinceLabel(stats.firstKickoff), golos));
+    }
+
+    case 'topmarcadores': {
+      if (!golosEnabled(env)) return ephemeral(M.golosOff);
+      return publicEmbed(renderTopScorers(await loadStats(repo, channelId)));
     }
 
     case 'eu': {
       const stats = await loadStats(repo, channelId);
       const name = player?.displayName ?? 'Jogador';
-      return ephemeralEmbed(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats));
+      return ephemeralEmbed(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats, golosEnabled(env)));
     }
 
     case 'historico': {
       // /historico jogador:@X → just that player's games; /historico alone → every game.
       const target = resolveUserOption(i, 'jogador');
-      const view = await loadHistory(repo, channelId, 0, target?.tgUserId ?? null, target?.displayName ?? null);
+      const view = await loadHistory(repo, channelId, 0, target?.tgUserId ?? null, target?.displayName ?? null, golosEnabled(env));
       return reply({ type: 4, data: historyData(view) });
     }
 
@@ -254,7 +260,7 @@ async function onCommand(
       if (!a || !b) return ephemeral(M.cb.error);
       const stats = await loadStats(repo, channelId);
       return publicEmbed(
-        renderComparison(statFor(stats, a.tgUserId, a.displayName), statFor(stats, b.tgUserId, b.displayName)),
+        renderComparison(statFor(stats, a.tgUserId, a.displayName), statFor(stats, b.tgUserId, b.displayName), golosEnabled(env)),
       );
     }
 
@@ -284,7 +290,7 @@ async function onComponent(
 
   // 📜 history ◀️/▶️: re-query the requested page and edit this (ephemeral) message in place.
   if (parsed.kind === 'historyPage') {
-    const view = await loadHistory(repo, channelId, parsed.page, parsed.tgUserId, null);
+    const view = await loadHistory(repo, channelId, parsed.page, parsed.tgUserId, null, golosEnabled(env));
     return updateMsg(historyData(view));
   }
 
@@ -303,6 +309,16 @@ async function onComponent(
     if (!isAdmin(env, player.tgUserId)) return ephemeral(M.cb.onlyAdmin);
     const game = await repo.getGame(parsed.gameId);
     if (!game) return ephemeral(M.cb.error);
+    // ⚽ capture buttons only work when the feature is on (a stale card button → polite no-op).
+    if (
+      (parsed.kind === 'captureOpen' ||
+        parsed.kind === 'captureAdd' ||
+        parsed.kind === 'captureUndo' ||
+        parsed.kind === 'captureDone') &&
+      !golosEnabled(env)
+    ) {
+      return ephemeral(M.golosOff);
+    }
     if (parsed.kind === 'teamOpen' || parsed.kind === 'teamEdit') {
       return reply({ type: 4, data: await teamPanelData(repo, game) });
     }
@@ -383,9 +399,11 @@ async function onModal(
     // A recorded score means the game is over → close the check-in window so it counts as
     // PLAYED (and posts the recap with ghost-fix buttons). No-op if it's already closed.
     if (game.status === 'CHECKIN_OPEN') await games.closeCheckin(sender, repo, game, now);
-    await recordResult(sender, repo, game, parsedResult.goalsA, parsedResult.goalsB, player.tgUserId, now);
-    // Straight into the ⚽ capture panel (ephemeral, admin-only) so golos/assists are filled now.
-    return reply({ type: 4, data: await capturePanelData(repo, game) });
+    const golos = golosEnabled(env);
+    await recordResult(sender, repo, game, parsedResult.goalsA, parsedResult.goalsB, player.tgUserId, now, golos);
+    // With the feature on, drop straight into the ⚽ capture panel (ephemeral, admin-only) so
+    // golos/assists get filled now; otherwise just confirm the score was saved.
+    return golos ? reply({ type: 4, data: await capturePanelData(repo, game) }) : ephemeral(M.cb.resultSaved);
   }
 
   if (customId !== 'novojogo') return ephemeral(M.cb.error);

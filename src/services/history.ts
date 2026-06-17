@@ -56,6 +56,7 @@ export async function loadHistory(
   page: number,
   tgUserId: string | null,
   name: string | null,
+  golos = true,
 ): Promise<HistoryView> {
   const size = HISTORY_PAGE_SIZE;
 
@@ -65,7 +66,7 @@ export async function loadHistory(
     const totalPages = Math.max(1, Math.ceil(total / size));
     const p = clampPage(page, totalPages);
     const rows = total === 0 ? [] : await repo.getHistoryPageForPlayer(chatId, tgUserId, size, p * size);
-    const byGame = eventsByGame(await repo.getGoalEventsForGames(rows.map((r) => r.id)));
+    const byGame = eventsByGame(golos ? await repo.getGoalEventsForGames(rows.map((r) => r.id)) : []);
     return {
       name: displayName,
       tgUserId,
@@ -90,8 +91,8 @@ export async function loadHistory(
   const totalPages = Math.max(1, Math.ceil(total / size));
   const p = clampPage(page, totalPages);
   const rows = total === 0 ? [] : await repo.getHistoryPage(chatId, size, p * size);
-  const byGame = eventsByGame(await repo.getGoalEventsForGames(rows.map((r) => r.id)));
-  const names = rows.length === 0 ? new Map<string, string>() : new Map((await repo.getKnownPlayers()).map((pl) => [pl.tgUserId, pl.displayName]));
+  const byGame = eventsByGame(golos ? await repo.getGoalEventsForGames(rows.map((r) => r.id)) : []);
+  const names = !golos || rows.length === 0 ? new Map<string, string>() : new Map((await repo.getKnownPlayers()).map((pl) => [pl.tgUserId, pl.displayName]));
   return {
     name: null,
     tgUserId: null,

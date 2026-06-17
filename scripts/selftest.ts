@@ -36,7 +36,8 @@ import { loadCaptureState } from '../src/services/capture';
 import { renderCapturePanel } from '../src/render/capture-message';
 import { seedTestGame } from '../src/services/testseed';
 import { loadHistory } from '../src/services/history';
-import { renderComparison, renderPersonalCard, renderStats } from '../src/render/stats-message';
+import { renderComparison, renderPersonalCard, renderStats, renderTopScorers } from '../src/render/stats-message';
+import { golosEnabled } from '../src/util';
 import { renderHistory } from '../src/render/history-message';
 import { historyComponents, parseCb } from '../src/discord/components';
 
@@ -282,6 +283,19 @@ const sG = await loadStats(repo, chatId);
 check('stats: golos counted (user 3 = 2, top scorer)', statFor(sG, '3', 'u3').goals === 2 && topByGoals(sG, 5)[0]?.tgUserId === '3');
 check('stats: assists counted (user 2 = 1, top assister)', statFor(sG, '2', 'u2').assists === 1 && topByAssists(sG, 5)[0]?.tgUserId === '2');
 check('render: ⚽ Goleadores + 🅰️ Assistências boards present', renderStats(sG, sG, 'junho', null).includes('Goleadores') && renderStats(sG, sG, 'junho', null).includes('Assistências'));
+check('render: /topmarcadores shows just the two boards', renderTopScorers(sG).includes('Goleadores') && renderTopScorers(sG).includes('Assistências'));
+
+// --- GOLOS_ENABLED feature flag: default on; "false"/"0"/"off"/"no" turn it off ---
+check('flag: default (unset) is ON', golosEnabled({}) === true && golosEnabled({ GOLOS_ENABLED: 'true' }) === true);
+check('flag: explicit off values turn it OFF', !golosEnabled({ GOLOS_ENABLED: 'false' }) && !golosEnabled({ GOLOS_ENABLED: '0' }) && !golosEnabled({ GOLOS_ENABLED: 'off' }));
+check('flag off: /stats hides the golos boards', !renderStats(sG, sG, 'junho', null, false).includes('Goleadores'));
+check('flag off: personal card hides the ⚽/🅰️ lines', !renderPersonalCard(statFor(sG, '3', 'u3'), sG, false).includes('⚽ Golos'));
+check('flag off: comparison hides the ⚽/🅰️ rows', !renderComparison(statFor(sG, '3', 'u3'), statFor(sG, '4', 'u4'), false).includes('⚽ Golos'));
+check(
+  'flag off: /historico hides the scorer (shown when on)',
+  renderHistory(await loadHistory(repo, chatId, 0, null, null, true)).includes('⚽') &&
+    !renderHistory(await loadHistory(repo, chatId, 0, null, null, false)).includes('⚽'),
+);
 
 // --- 📜 histórico: e2e page off the played game + pure render/pagination ---
 // chatId now has exactly 1 PLAYED game, score Alpha 1–4 Beta (user 2 = Alpha loss, 3 & 4 = Beta win).
