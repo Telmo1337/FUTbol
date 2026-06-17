@@ -314,6 +314,9 @@ async function onModal(
     if ((await repo.getResultTeams(game.id)).length === 0) return ephemeral(M.cb.resultNoTeams);
     const parsedResult = parseResultFields({ golosA: fields.golosA ?? '', golosB: fields.golosB ?? '' });
     if ('error' in parsedResult) return ephemeral(parsedResult.error);
+    // A recorded score means the game is over → close the check-in window so it counts as
+    // PLAYED (and posts the recap with ghost-fix buttons). No-op if it's already closed.
+    if (game.status === 'CHECKIN_OPEN') await games.closeCheckin(sender, repo, game, now);
     await recordResult(sender, repo, game, parsedResult.goalsA, parsedResult.goalsB, player.tgUserId, now);
     return ephemeral(M.cb.resultSaved);
   }
