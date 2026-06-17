@@ -22,6 +22,9 @@ export const COMMANDS: Command[] = [
   { name: 'jogo', description: 'Ver / repor o jogo atual no canal' },
   { name: 'fecharvotacao', description: 'Fechar já a votação (só admin)' },
   { name: 'cancelar', description: 'Cancelar o jogo atual (só admin)' },
+  { name: 'equipas', description: 'Montar / editar as equipas do jogo (só admin)' },
+  { name: 'resultado', description: 'Registar o placar do último jogo (só admin)' },
+  { name: 'testjogo', description: 'Criar um jogo de teste com jogadores falsos (só canal de teste)' },
   {
     name: 'stats',
     description: 'Rankings do grupo, ou o cartão de um jogador',

@@ -16,7 +16,8 @@ are handled for you. **European Portuguese (pt-PT)**, runs for **€0**.
 4. **📋 Lista + lista de espera** — os primeiros até ao máximo ficam confirmados; o resto vai para a lista de espera e **sobe automaticamente** quando alguém desiste.
 5. **🔔 Avisos automáticos** — "jogo confirmado", "faltam X", pings a quem não respondeu, e fecho das inscrições antes do jogo.
 6. **🟢 Check-in (à hora do jogo)** — o bot abre um quadro `✅ Cheguei`. Quem aparece carrega; quem disse "Vou" e não carrega fica **fantasma 👻**. Os suplentes também podem carregar e contam presença. 5h depois fecha sozinho e sai um **resumo** (com botões para o admin corrigir falsos fantasmas).
-7. **📊 Estatísticas** — `/stats` mostra os rankings (🏅 fiabilidade, 👟 presenças, 🔥 sequência, 👻 fantasma) e `/eu` mostra as tuas.
+7. **⚔️ Equipas + resultado** — quando as inscrições fecham, o bot abre sozinho um quadro **Equipas**. O admin monta **Team Alpha vs Team Beta** num **painel privado** (escolhe quem fica em cada equipa; quem deixa de fora não jogou) e publica — só aí os jogadores veem as equipas. Acabado o jogo, mete o placar (`📊 Inserir resultado` ou `/resultado`) → vira **V/E/D + vitórias**.
+8. **📊 Estatísticas** — `/stats` mostra os rankings (🏅 fiabilidade, 👟 presenças, 🔥 sequência, 👻 fantasma, 🏆 vitórias, 🎯 % de vitórias, 🔝 série de vitórias) e `/eu` mostra as tuas.
 
 ## Comandos
 
@@ -26,6 +27,8 @@ are handled for you. **European Portuguese (pt-PT)**, runs for **€0**.
 | `/jogo` | Re-mostrar o jogo atual no canal |
 | `/fecharvotacao` | Fechar já a votação *(só admin)* |
 | `/cancelar` | Cancelar o jogo atual *(só admin)* |
+| `/equipas` | Montar/editar as equipas do jogo num painel privado *(só admin)* ⚔️ |
+| `/resultado` | Registar o placar do último jogo *(só admin)* 📊 |
 | `/stats` | Rankings do grupo 📊; `/stats jogador:@X` mostra o cartão de um jogador *(público)* |
 | `/eu` | As tuas estatísticas 📇, com a tua posição em cada ranking *(só tu vês)* |
 | `/comparar` | Comparar dois jogadores lado a lado ⚔️ *(`/comparar a:@X b:@Y`)* |
@@ -103,9 +106,17 @@ registados no passo 3 (se mudares a lista, corre `npm run register` de novo).
 ## 🧪 Testar o motor (sem Discord)
 
 ```bash
-npm run selftest      # simula votação → vencedor → presenças → lista de espera → promoção → fecho → check-in
+npm run selftest      # simula votação → vencedor → presenças → lista de espera → promoção → fecho → check-in → equipas → resultado
 npm run typecheck     # verifica os tipos
 ```
+
+### Testar o fluxo de equipas/resultado no Discord (canal de teste)
+
+Para experimentar o `⚔️ Equipas` + `📊 Resultado` a sério sem precisar de 14 pessoas: define
+`TEST_CHANNEL_ID` (o id de um canal `#bot-tester`) e corre **`/testjogo`** nesse canal — cria um
+jogo já confirmado com jogadores falsos e abre o quadro das equipas. As estatísticas são **por
+canal**, por isso isto nunca toca nos números do grupo. Sem `TEST_CHANNEL_ID` o comando fica
+desativado.
 
 ---
 
@@ -115,11 +126,11 @@ npm run typecheck     # verifica os tipos
 src/
   index.ts        Workers entry (interactions endpoint + cron)
   discord/        adapter Discord: verify (ed25519), rest (cliente), components,
-                  commands, novojogo (modal), interactions (router)
+                  commands, novojogo + teams (modais), interactions (router)
   core/           lógica pura (sem Discord/DB): votação, presenças, avisos, datas, stats
   db/             schema (Drizzle) + repo (único sítio com SQL)
   render/         construção do texto das mensagens (markdown)
-  services/       games.ts (orquestração) + tick.ts (relógio) + stats.ts
+  services/       games.ts (orquestração) + tick.ts (relógio) + stats.ts + teams.ts + testseed.ts
   messages.ts     TODAS as frases (pt-PT) — muda aqui o texto
 migrations/       SQL aplicado ao D1 (local e remoto)
 scripts/          selftest.ts · register-commands.ts
@@ -131,7 +142,8 @@ scripts/          selftest.ts · register-commands.ts
 ## 🗺️ A seguir (já pensado, sem reescrever o que está feito)
 
 - ✅ **v2 — Estatísticas** automáticas: presenças, fiabilidade, sequências, fantasma 👻. *(feito — ver `docs/v2-plan.md`)*
-- **v3 — Vitórias/derrotas + MVP** com um toque depois do jogo.
+- ✅ **v3 — Equipas + resultados** manuais: Team Alpha vs Beta + placar → V/E/D, % de vitórias e série de vitórias. *(feito)*
+- **Golos/assistências individuais** — MVP do jogo, com fluxo próprio.
 - **Repartir a conta** do campo (quem pagou / quem deve).
 - **Embeds** mais bonitos para os quadros (já dá para fazer, é polimento visual).
 - **Painel web** de estatísticas (Cloudflare Pages).

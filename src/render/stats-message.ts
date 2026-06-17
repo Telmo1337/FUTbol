@@ -9,10 +9,13 @@ import {
   reliabilityRawPct,
   topByAppearances,
   topByBestStreak,
+  topByBestWinStreak,
   topByEarlyBird,
   topByGhosts,
   topByReliability,
   topByStreak,
+  topByWinPct,
+  topByWins,
   type PlayerStat,
   type Stats,
 } from '../core/stats';
@@ -69,6 +72,20 @@ export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinc
   const perfect = perfectRecord(stats, LEADERBOARD_TOP_N);
   if (perfect.length > 0) parts.push('', M.stats.perfectTitle, ...board(perfect, (p) => M.stats.perfectLine(p.confirmedFor)));
 
+  // 🏆 most wins (skip until a result is recorded)
+  const wins = topByWins(stats, LEADERBOARD_TOP_N);
+  if (wins.length > 0) parts.push('', M.stats.winsTitle, ...board(wins, (p) => M.stats.winsLine(p.wins)));
+
+  // 🎯 best win rate (gated, like reliability)
+  const winPct = topByWinPct(stats, LEADERBOARD_TOP_N);
+  if (winPct.length > 0)
+    parts.push('', M.stats.winPctTitle, ...board(winPct, (p) => M.stats.winPctLine(p.winPct!, p.wins, p.draws, p.losses)));
+
+  // 🔝 longest win streak ever (skip until someone wins twice in a row)
+  const winStreak = topByBestWinStreak(stats, LEADERBOARD_TOP_N);
+  if (winStreak.length > 0)
+    parts.push('', M.stats.winStreakTitle, ...board(winStreak, (p) => M.stats.winStreakLine(p.bestWinStreak)));
+
   // 👻 ghosts (always shown — fallback praises a clean week)
   parts.push('', M.stats.ghostsTitle);
   const gh = topByGhosts(stats, LEADERBOARD_TOP_N);
@@ -102,6 +119,12 @@ export function renderPersonalCard(p: PlayerStat, stats: Stats): string {
     parts.push(M.eu.reliabilityWarming(Math.max(0, MIN_GAMES_TO_RANK - p.confirmedFor)));
   }
   parts.push(M.eu.streak(p.currentStreak, p.bestStreak) + rankSuffix(topByStreak(stats, n), p.tgUserId));
+  // result lines (only once this player has a game with a recorded score)
+  if (p.resultGames > 0) {
+    parts.push(M.eu.wins(p.wins, p.draws, p.losses) + rankSuffix(topByWins(stats, n), p.tgUserId));
+    if (p.winPct != null) parts.push(M.eu.winPct(p.winPct) + rankSuffix(topByWinPct(stats, n), p.tgUserId));
+    parts.push(M.eu.winStreak(p.currentWinStreak, p.bestWinStreak) + rankSuffix(topByBestWinStreak(stats, n), p.tgUserId));
+  }
   parts.push(M.eu.ghosts(p.ghosts));
   return parts.join('\n');
 }
@@ -126,6 +149,16 @@ export function renderComparison(a: PlayerStat, b: PlayerStat): string {
 
   const [stA, stB] = lead(String(a.currentStreak), String(b.currentStreak), a.currentStreak, b.currentStreak);
   parts.push(M.comparar.streak(stA, stB, a.bestStreak, b.bestStreak));
+
+  const [wA, wB] = lead(String(a.wins), String(b.wins), a.wins, b.wins);
+  parts.push(M.comparar.wins(wA, wB));
+
+  const wpFmt = (v: number | null) => (v == null ? '—' : `${v}%`);
+  const [wpA, wpB] = lead(wpFmt(a.winPct), wpFmt(b.winPct), a.winPct ?? -1, b.winPct ?? -1);
+  parts.push(M.comparar.winPct(wpA, wpB));
+
+  const [wsA, wsB] = lead(String(a.currentWinStreak), String(b.currentWinStreak), a.currentWinStreak, b.currentWinStreak);
+  parts.push(M.comparar.winStreak(wsA, wsB, a.bestWinStreak, b.bestWinStreak));
 
   const [ghA, ghB] = lead(String(a.ghosts), String(b.ghosts), a.ghosts, b.ghosts, false);
   parts.push(M.comparar.ghosts(ghA, ghB));

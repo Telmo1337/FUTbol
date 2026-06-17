@@ -13,14 +13,19 @@ import type { Repo } from '../db/repo';
 import type { Sender } from './rest';
 import { M } from '../messages';
 import { parseAdminIds } from '../util';
-import { parseCb } from './components';
+import { parseCb, teamsPanelComponents } from './components';
 import { boardEmbed } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
+import { resultModal, parseResultFields } from './teams';
 import * as games from '../services/games';
+import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../services/teams';
+import { seedTestGame } from '../services/testseed';
 import { loadStats, loadStatsInput } from '../services/stats';
 import { computeStats, statFor } from '../core/stats';
 import { formatMonth, monthWindow } from '../core/time';
 import { renderComparison, renderPersonalCard, renderStats, sinceLabel } from '../render/stats-message';
+import { renderTeamsPanel } from '../render/teams-message';
+import type { Game } from '../types';
 
 interface DiscordUser {
   id: string;
@@ -36,6 +41,7 @@ interface Interaction {
   data?: {
     name?: string; // slash command
     custom_id?: string; // component / modal
+    values?: string[]; // string-select submit: the chosen option values (user ids)
     components?: { components?: { custom_id: string; value?: string }[] }[]; // modal submit
     // Slash-command arguments. For a USER option, `value` is the picked user's snowflake,
     // and `resolved` carries that user's name + server nick so we never need a name lookup.
@@ -82,6 +88,18 @@ const modal = (data: object) => reply({ type: 9, data });
 // Type 6 = DEFERRED_UPDATE_MESSAGE: silently acknowledge a component tap (no toast, no
 // loading state). We edit the live board separately over REST.
 const silentAck = () => reply({ type: 6 });
+// Type 7 = UPDATE_MESSAGE: edit the message the tapped component lives on (the private panel).
+const updateMsg = (data: object) => reply({ type: 7, data });
+
+/** The admin's private (ephemeral) team-formation panel: buckets embed + the two selects + lock. */
+async function teamPanelData(repo: Repo, game: Game): Promise<object> {
+  const state = await loadTeamsState(repo, game);
+  return {
+    embeds: [boardEmbed(renderTeamsPanel(state.view))],
+    components: teamsPanelComponents(game.id, state.squad, state.aIds, state.bIds),
+    flags: 64,
+  };
+}
 
 export async function handleInteraction(i: Interaction, env: Env, repo: Repo, sender: Sender): Promise<Response> {
   if (i.type === 1) return pong();
@@ -148,6 +166,29 @@ async function onCommand(
       return ephemeral('Jogo cancelado ✅');
     }
 
+    case 'equipas': {
+      if (!isAdmin(env, player?.tgUserId)) return ephemeral(M.notAdmin);
+      const game = await repo.getLatestTeamPhaseGame(channelId);
+      if (!game) return ephemeral(M.noTeamGame);
+      return reply({ type: 4, data: await teamPanelData(repo, game) });
+    }
+
+    case 'resultado': {
+      if (!isAdmin(env, player?.tgUserId)) return ephemeral(M.notAdmin);
+      const game = await repo.getLatestTeamPhaseGame(channelId);
+      if (!game) return ephemeral(M.noTeamGame);
+      if (!game.teamsLockedAt) return ephemeral(M.cb.resultNoTeams);
+      return modal(resultModal(game.id));
+    }
+
+    case 'testjogo': {
+      if (!isAdmin(env, player?.tgUserId) || !player) return ephemeral(M.notAdmin);
+      if (!env.TEST_CHANNEL_ID) return ephemeral(M.test.disabled);
+      if (channelId !== env.TEST_CHANNEL_ID) return ephemeral(M.test.wrongChannel);
+      const n = await seedTestGame(sender, repo, channelId, player.tgUserId, now);
+      return ephemeral(M.test.created(n));
+    }
+
     case 'stats': {
       // /stats jogador:@X → that player's card (public); /stats alone → the group boards.
       const target = resolveUserOption(i, 'jogador');
@@ -202,6 +243,33 @@ async function onComponent(
     return silentAck();
   }
 
+  // Team-formation + result controls — all admin-only, all reply directly (panel / modal / update).
+  if (
+    parsed.kind === 'teamOpen' ||
+    parsed.kind === 'teamEdit' ||
+    parsed.kind === 'teamSelect' ||
+    parsed.kind === 'teamLock' ||
+    parsed.kind === 'resultOpen'
+  ) {
+    if (!isAdmin(env, player.tgUserId)) return ephemeral(M.cb.onlyAdmin);
+    const game = await repo.getGame(parsed.gameId);
+    if (!game) return ephemeral(M.cb.error);
+    if (parsed.kind === 'teamOpen' || parsed.kind === 'teamEdit') {
+      return reply({ type: 4, data: await teamPanelData(repo, game) });
+    }
+    if (parsed.kind === 'teamSelect') {
+      await applyTeamSelect(repo, game, parsed.side, i.data?.values ?? []);
+      return updateMsg(await teamPanelData(repo, game));
+    }
+    if (parsed.kind === 'teamLock') {
+      const ok = await publishTeams(sender, repo, game, now);
+      return ok ? updateMsg({ content: M.cb.teamsPublished, embeds: [], components: [] }) : ephemeral(M.cb.teamsNeedBoth);
+    }
+    // resultOpen: the score modal (game id rides in the modal custom_id)
+    if (!game.teamsLockedAt) return ephemeral(M.cb.resultNoTeams);
+    return modal(resultModal(game.id));
+  }
+
   let ack = '';
   if (parsed.kind === 'rsvp') {
     ack = await games.handleRsvp(sender, repo, parsed.gameId, player.tgUserId, parsed.status, now);
@@ -231,14 +299,30 @@ async function onModal(
   channelId: string,
   now: number,
 ): Promise<Response> {
-  if (i.data?.custom_id !== 'novojogo') return ephemeral(M.cb.error);
+  const customId = i.data?.custom_id ?? '';
+
+  const fields: Record<string, string> = {};
+  for (const row of i.data?.components ?? []) {
+    for (const c of row.components ?? []) fields[c.custom_id] = c.value ?? '';
+  }
+
+  // 📊 score modal: record the result for the game id carried in the custom_id.
+  if (customId.startsWith('result:')) {
+    if (!isAdmin(env, player?.tgUserId) || !player) return ephemeral(M.notAdmin);
+    const game = await repo.getGame(Number(customId.split(':')[1]));
+    if (!game) return ephemeral(M.cb.error);
+    if ((await repo.getResultTeams(game.id)).length === 0) return ephemeral(M.cb.resultNoTeams);
+    const parsedResult = parseResultFields({ golosA: fields.golosA ?? '', golosB: fields.golosB ?? '' });
+    if ('error' in parsedResult) return ephemeral(parsedResult.error);
+    await recordResult(sender, repo, game, parsedResult.goalsA, parsedResult.goalsB, player.tgUserId, now);
+    return ephemeral(M.cb.resultSaved);
+  }
+
+  if (customId !== 'novojogo') return ephemeral(M.cb.error);
   if (!isAdmin(env, player?.tgUserId) || !player) return ephemeral(M.notAdmin);
   if (await repo.getCurrentGame(channelId)) return ephemeral(M.gameAlreadyActive);
 
-  const v: Record<string, string> = {};
-  for (const row of i.data.components ?? []) {
-    for (const c of row.components ?? []) v[c.custom_id] = c.value ?? '';
-  }
+  const v: Record<string, string> = fields;
 
   const parsed = parseNovoJogoFields(
     { slots: v.slots ?? '', local: v.local, players: v.players, deadline: v.deadline },

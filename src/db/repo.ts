@@ -1,9 +1,9 @@
 // Repository: the ONLY module that runs SQL. Everything else calls these methods.
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { createDb } from './client';
-import { players, games, candidateSlots, votes, rsvps, checkins } from './schema';
+import { players, games, candidateSlots, votes, rsvps, checkins, resultTeams, results } from './schema';
 import { GAME_STATUSES_ACTIVE } from '../config';
-import type { Checkin, CheckinSource, Game, GameStatus, RsvpStatus, RsvpView, Slot, Vote } from '../types';
+import type { Checkin, CheckinSource, Game, GameStatus, ResultSide, RsvpStatus, RsvpView, Slot, Vote } from '../types';
 
 /** A finished game with its kickoff time, for stats. */
 export interface PlayedGame {
@@ -245,6 +245,75 @@ export function createRepo(d1: D1Database) {
       return db.select().from(checkins).where(eq(checkins.gameId, gameId));
     },
 
+    // ---------- teams + results (v3) ----------
+    /** Most recent game in a chat that has reached the team phase (teams board posted). */
+    async getLatestTeamPhaseGame(chatId: string): Promise<Game | null> {
+      const row = await db
+        .select()
+        .from(games)
+        .where(and(eq(games.chatId, chatId), isNotNull(games.teamsMsgId)))
+        .orderBy(desc(games.id))
+        .get();
+      return row ?? null;
+    },
+
+    async setTeamsMsg(id: number, msgId: string, now: number): Promise<void> {
+      await db.update(games).set({ teamsMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
+    },
+
+    async lockTeams(id: number, now: number): Promise<void> {
+      await db.update(games).set({ teamsLockedAt: now, updatedAt: now }).where(eq(games.id, id)).run();
+    },
+
+    async getResultTeams(gameId: number): Promise<{ tgUserId: string; side: ResultSide }[]> {
+      return db
+        .select({ tgUserId: resultTeams.tgUserId, side: resultTeams.side })
+        .from(resultTeams)
+        .where(eq(resultTeams.gameId, gameId));
+    },
+
+    /** Overwrite the whole team assignment for a game (delete + insert). */
+    async replaceTeams(gameId: number, rows: { tgUserId: string; side: ResultSide }[]): Promise<void> {
+      await db.delete(resultTeams).where(eq(resultTeams.gameId, gameId)).run();
+      if (rows.length > 0) {
+        await db.insert(resultTeams).values(rows.map((r) => ({ gameId, tgUserId: r.tgUserId, side: r.side }))).run();
+      }
+    },
+
+    async saveResult(gameId: number, goalsA: number, goalsB: number, recordedBy: string, now: number): Promise<void> {
+      await db
+        .insert(results)
+        .values({ gameId, goalsA, goalsB, recordedBy, recordedAt: now })
+        .onConflictDoUpdate({ target: results.gameId, set: { goalsA, goalsB, recordedBy, recordedAt: now } });
+    },
+
+    async getResult(gameId: number): Promise<{ goalsA: number; goalsB: number } | null> {
+      const row = await db
+        .select({ goalsA: results.goalsA, goalsB: results.goalsB })
+        .from(results)
+        .where(eq(results.gameId, gameId))
+        .get();
+      return row ?? null;
+    },
+
+    /** Delete every game (and its child rows) created by a given author in a chat. For /testjogo cleanup. */
+    async deleteGamesByCreator(chatId: string, createdBy: string): Promise<number> {
+      const rows = await db
+        .select({ id: games.id })
+        .from(games)
+        .where(and(eq(games.chatId, chatId), eq(games.createdBy, createdBy)));
+      const ids = rows.map((r) => r.id);
+      if (ids.length === 0) return 0;
+      await db.delete(votes).where(inArray(votes.gameId, ids)).run();
+      await db.delete(rsvps).where(inArray(rsvps.gameId, ids)).run();
+      await db.delete(checkins).where(inArray(checkins.gameId, ids)).run();
+      await db.delete(resultTeams).where(inArray(resultTeams.gameId, ids)).run();
+      await db.delete(results).where(inArray(results.gameId, ids)).run();
+      await db.delete(candidateSlots).where(inArray(candidateSlots.gameId, ids)).run();
+      await db.delete(games).where(inArray(games.id, ids)).run();
+      return ids.length;
+    },
+
     // ---------- stats (read-side, all-time per chat) ----------
     /** Finished games (with kickoff time) for a chat, oldest first. */
     async getPlayedGames(chatId: string): Promise<PlayedGame[]> {
@@ -272,6 +341,24 @@ export function createRepo(d1: D1Database) {
         .select({ gameId: checkins.gameId, tgUserId: checkins.tgUserId })
         .from(checkins)
         .where(inArray(checkins.gameId, gameIds));
+    },
+
+    async getResultsForGames(gameIds: number[]): Promise<{ gameId: number; goalsA: number; goalsB: number }[]> {
+      if (gameIds.length === 0) return [];
+      return db
+        .select({ gameId: results.gameId, goalsA: results.goalsA, goalsB: results.goalsB })
+        .from(results)
+        .where(inArray(results.gameId, gameIds));
+    },
+
+    async getResultTeamsForGames(
+      gameIds: number[],
+    ): Promise<{ gameId: number; tgUserId: string; side: ResultSide }[]> {
+      if (gameIds.length === 0) return [];
+      return db
+        .select({ gameId: resultTeams.gameId, tgUserId: resultTeams.tgUserId, side: resultTeams.side })
+        .from(resultTeams)
+        .where(inArray(resultTeams.gameId, gameIds));
     },
   };
 }
