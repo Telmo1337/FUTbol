@@ -20,6 +20,7 @@ export const M = {
     '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
     '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
     '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
+    '`/historico` — histórico de jogos (todos ou de um jogador) 📜\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem',
 
@@ -30,6 +31,7 @@ export const M = {
     '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
     '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
     '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
+    '`/historico` — histórico de jogos (todos ou de um jogador) 📜\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem\n\n' +
     '**Admin** 🔒\n' +
@@ -189,7 +191,7 @@ export const M = {
     modalTitle: 'Resultado do jogo',
     fieldAlpha: 'Golos da Equipa Alpha',
     fieldBeta: 'Golos da Equipa Beta',
-    cardTitle: '📊 **Resultado**',
+    cardTitle: (day: string) => (day ? `📊 **Resultado — ${day}**` : '📊 **Resultado**'),
     score: (ga: number, gb: number) => `🅰️ **Alpha  ${ga} – ${gb}  Beta** 🅱️`,
     winAlpha: '🏆 Vitória da **Alpha**!',
     winBeta: '🏆 Vitória da **Beta**!',
@@ -270,5 +272,28 @@ export const M = {
     winPct: (a: string, b: string) => `🎯 % vitórias: ${a} — ${b}`,
     winStreak: (a: string, b: string, ba: number, bb: number) =>
       `🔝 Série de vitórias: ${a} — ${b} *(melhor: ${ba} — ${bb})*`,
+  },
+
+  // ---- 📜 /historico (paginated game history) ----
+  history: {
+    title: '📜 **Histórico**',
+    titlePerson: (name: string) => `📜 **Histórico — ${name}**`,
+    none: 'Ainda não há jogos no histórico. Aparecem aqui depois do primeiro jogo. ⚽',
+    nonePerson: (name: string) => `${name} ainda não tem jogos no histórico.`,
+    noResult: '*(sem resultado)*',
+    // global line: a game's Alpha–Beta score + the winner badge
+    scoreGlobal: (a: number, b: number) => `🅰️ ${a}–${b} 🅱️`,
+    winAlpha: '🏆 Alpha',
+    winBeta: '🏆 Beta',
+    draw: '🤝 Empate',
+    // per-person line: the side they played + their own outcome (their goals first)
+    side: (s: 'A' | 'B') => (s === 'A' ? '🅰️ Alpha' : '🅱️ Beta'),
+    personWin: (mine: number, theirs: number) => `✅ Vitória (${mine}–${theirs})`,
+    personLoss: (mine: number, theirs: number) => `❌ Derrota (${mine}–${theirs})`,
+    personDraw: (mine: number, theirs: number) => `🤝 Empate (${mine}–${theirs})`,
+    // ◀️/▶️ pagination
+    pageIndicator: (cur: number, total: number) => `Pág. ${cur}/${total}`,
+    prev: '◀️',
+    next: '▶️',
   },
 };

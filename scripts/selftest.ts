@@ -10,7 +10,7 @@ import * as games from '../src/services/games';
 import { confirmedIds, splitSquad } from '../src/core/rsvp';
 import { pickWinner, tallyVotes } from '../src/core/voting';
 import { renderVoteMessage } from '../src/render/vote-message';
-import { parseDateTime, formatWhen, lisbonToUtc, lisbonParts, monthWindow, formatMonth } from '../src/core/time';
+import { parseDateTime, formatWhen, formatDay, lisbonToUtc, lisbonParts, monthWindow, formatMonth } from '../src/core/time';
 import { computeFreeSlots } from '../src/core/availability';
 import { isWeeklyTriggerWindow, maybeCreateWeeklyGame } from '../src/services/weekly';
 import type { FieldClient } from '../src/services/field';
@@ -30,7 +30,10 @@ import {
   reliabilityRawPct,
 } from '../src/core/stats';
 import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../src/services/teams';
+import { loadHistory } from '../src/services/history';
 import { renderComparison, renderPersonalCard, renderStats } from '../src/render/stats-message';
+import { renderHistory } from '../src/render/history-message';
+import { historyComponents, parseCb } from '../src/discord/components';
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -251,6 +254,36 @@ check('result: user 3 has 1 loss', statFor(sR, '3', 'u3').losses === 1 && statFo
 await recordResult(sender, repo, game, 1, 4, '1', game.checkinCloseAt! + 30);
 const sR2 = await loadStats(repo, chatId);
 check('result: re-recording overwrites the score', statFor(sR2, '2', 'u2').wins === 0 && statFor(sR2, '2', 'u2').losses === 1 && statFor(sR2, '3', 'u3').wins === 1);
+
+// --- 📜 histórico: e2e page off the played game + pure render/pagination ---
+// chatId now has exactly 1 PLAYED game, score Alpha 1–4 Beta (user 2 = Alpha loss, 3 & 4 = Beta win).
+const hAll = await loadHistory(repo, chatId, 0, null, null);
+check('history: one game, single page', hAll.entries.length === 1 && hAll.totalPages === 1);
+const hAllText = renderHistory(hAll);
+check('history global: shows the Beta-win line', /1[–-]4/.test(hAllText) && hAllText.includes('🏆 Beta') && !hAllText.includes('sem resultado'));
+check('history: single page → no pagination buttons', historyComponents(hAll.page, hAll.totalPages, hAll.tgUserId).length === 0);
+
+const hLoser = renderHistory(await loadHistory(repo, chatId, 0, '2', 'Dois')); // Alpha → lost, his goals first 1–4
+check('history person: Alpha loser shows Derrota (1–4)', hLoser.includes('Alpha') && /Derrota \(1[–-]4\)/.test(hLoser));
+const hWinner = renderHistory(await loadHistory(repo, chatId, 0, '3', 'Tres')); // Beta → won, his goals first 4–1
+check('history person: Beta winner shows Vitória (4–1)', hWinner.includes('Beta') && /Vit[oó]ria \(4[–-]1\)/.test(hWinner));
+check('history person: empty state for a no-show', renderHistory(await loadHistory(repo, chatId, 0, '999', 'Zé')).includes('ainda não tem jogos'));
+
+// pure: pagination math + custom_id round-trip + date label
+const pager = (historyComponents(1, 3, null)[0] as { components: { custom_id: string; disabled?: boolean; label: string }[] }).components;
+check(
+  'history pager: middle page of 3 → both arrows live, indicator disabled',
+  pager.length === 3 &&
+    pager[0].custom_id === 'hg:0' && pager[0].disabled !== true &&
+    pager[1].disabled === true && pager[1].label.includes('2/3') &&
+    pager[2].custom_id === 'hg:2' && pager[2].disabled !== true,
+);
+const pagerP = (historyComponents(0, 2, '123')[0] as { components: { custom_id: string; disabled?: boolean }[] }).components;
+check('history pager: per-person ids + prev disabled on first page', pagerP[0].disabled === true && pagerP[2].custom_id === 'hp:1:123');
+check('parseCb hg round-trip', JSON.stringify(parseCb('hg:2')) === JSON.stringify({ kind: 'historyPage', page: 2, tgUserId: null }));
+check('parseCb hp round-trip', JSON.stringify(parseCb('hp:1:123')) === JSON.stringify({ kind: 'historyPage', page: 1, tgUserId: '123' }));
+check('parseCb rejects non-numeric hp user', parseCb('hp:1:abc') === null);
+check('formatDay: date-only label (no time)', formatDay(NOW).length > 0 && !formatDay(NOW).includes(':'));
 
 // --- pure computeStats: subs, reliability %, streak reset ---
 // cap = 1, so each game's confirmed squad is the single earliest IN.
