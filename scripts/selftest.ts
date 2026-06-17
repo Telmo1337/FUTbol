@@ -22,10 +22,14 @@ import {
   topByReliability,
   topByBestStreak,
   topByEarlyBird,
+  topByWins,
+  topByWinPct,
+  topByBestWinStreak,
   perfectRecord,
   playerOfTheMonth,
   reliabilityRawPct,
 } from '../src/core/stats';
+import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../src/services/teams';
 import { renderComparison, renderPersonalCard, renderStats } from '../src/render/stats-message';
 
 let failures = 0;
@@ -218,6 +222,36 @@ await games.clearGhost(sender, repo, game.id, '4', chatId, '1', game.checkinClos
 const s2 = await loadStats(repo, chatId);
 check('stats: admin clear turns ghost into appearance', statFor(s2, '4', 'u4').ghosts === 0 && statFor(s2, '4', 'u4').appearances === 1);
 
+// --- v3 e2e: teams + result on the played game (confirmed squad = users 2,3,4) ---
+game = (await repo.getGame(game.id))!;
+check('teams: placeholder auto-posted at LOCKED', game.teamsMsgId != null && anySentIncludes('Equipas a caminho'));
+await applyTeamSelect(repo, game, 'A', ['2']); // Alpha = user 2
+await applyTeamSelect(repo, game, 'B', ['3', '4']); // Beta = users 3,4
+const tView = (await loadTeamsState(repo, game)).view;
+check('teams: Alpha=1, Beta=2, none left out', tView.alpha.length === 1 && tView.beta.length === 2 && tView.out.length === 0);
+check(
+  'teams: publish refused when a side is empty',
+  (await (async () => {
+    await applyTeamSelect(repo, game, 'B', []);
+    const refused = await publishTeams(sender, repo, (await repo.getGame(game.id))!, game.checkinCloseAt! + 5);
+    await applyTeamSelect(repo, game, 'B', ['3', '4']); // restore
+    return refused;
+  })()) === false,
+);
+check('teams: publish succeeds with both sides', (await publishTeams(sender, repo, game, game.checkinCloseAt! + 10)) === true);
+game = (await repo.getGame(game.id))!;
+check('teams: publish locks the teams (teams_locked_at set)', game.teamsLockedAt != null);
+// score: Alpha 5 – 2 Beta → user 2 wins, users 3 & 4 lose
+await recordResult(sender, repo, game, 5, 2, '1', game.checkinCloseAt! + 20);
+check('result: public card posted', anySentIncludes('Resultado') && anySentIncludes('Vitória da'));
+const sR = await loadStats(repo, chatId);
+check('result: user 2 has 1 win (V-E-D 1-0-0)', statFor(sR, '2', 'u2').wins === 1 && statFor(sR, '2', 'u2').losses === 0 && statFor(sR, '2', 'u2').resultGames === 1);
+check('result: user 3 has 1 loss', statFor(sR, '3', 'u3').losses === 1 && statFor(sR, '3', 'u3').wins === 0);
+// re-recording overwrites (Beta wins 1–4) → user 2 now has a loss, not a win
+await recordResult(sender, repo, game, 1, 4, '1', game.checkinCloseAt! + 30);
+const sR2 = await loadStats(repo, chatId);
+check('result: re-recording overwrites the score', statFor(sR2, '2', 'u2').wins === 0 && statFor(sR2, '2', 'u2').losses === 1 && statFor(sR2, '3', 'u3').wins === 1);
+
 // --- pure computeStats: subs, reliability %, streak reset ---
 // cap = 1, so each game's confirmed squad is the single earliest IN.
 const sStats = computeStats({
@@ -241,6 +275,8 @@ const sStats = computeStats({
     ['20', 'Bea'],
     ['30', 'Caz'],
   ]),
+  results: [],
+  teams: [],
 });
 const p10 = statFor(sStats, '10', 'Ana');
 check('computeStats: p10 appearances 3 / confirmedFor 4', p10.appearances === 3 && p10.confirmedFor === 4);
@@ -296,6 +332,8 @@ const monthInput = {
     ['A', 'Ari'],
     ['B', 'Bru'],
   ]),
+  results: [],
+  teams: [],
 };
 const allTime = computeStats(monthInput);
 const monthStats = computeStats(monthInput, monthWindow(NOW)); // NOW is June 2026
@@ -324,9 +362,53 @@ const perfectInput = {
     ['P', 'Perfeito'],
     ['Q', 'Quase'],
   ]),
+  results: [],
+  teams: [],
 };
 const perfStats = computeStats(perfectInput);
 check('perfect record: P qualifies (5/5), Q excluded (1 ghost)', perfectRecord(perfStats, 5).map((p) => p.tgUserId).join() === 'P');
+
+// --- v3 pure: wins / draws / losses, win% gating, win streak ---
+// W is always on side A, L on side B. Scores: A wins, A wins, draw, B wins.
+const winInput = {
+  games: [1, 2, 3, 4].map((id) => ({ id, capPlayers: 2, kickoffAt: id * 1000 })),
+  rsvps: [1, 2, 3, 4].flatMap((g) => [
+    { gameId: g, tgUserId: 'W', status: 'IN' as const, rankAt: 1 },
+    { gameId: g, tgUserId: 'L', status: 'IN' as const, rankAt: 2 },
+  ]),
+  presentKeys: new Set<string>(),
+  names: new Map([
+    ['W', 'Vence'],
+    ['L', 'Perde'],
+  ]),
+  results: [
+    { gameId: 1, goalsA: 3, goalsB: 1 },
+    { gameId: 2, goalsA: 2, goalsB: 0 },
+    { gameId: 3, goalsA: 1, goalsB: 1 },
+    { gameId: 4, goalsA: 0, goalsB: 2 },
+  ],
+  teams: [1, 2, 3, 4].flatMap((g) => [
+    { gameId: g, tgUserId: 'W', side: 'A' as const },
+    { gameId: g, tgUserId: 'L', side: 'B' as const },
+  ]),
+};
+const winStats = computeStats(winInput);
+const W = statFor(winStats, 'W', 'Vence');
+check('wins: W record V-E-D 2-1-1 over 4 result games', W.wins === 2 && W.draws === 1 && W.losses === 1 && W.resultGames === 4);
+check('wins: W win% = 50 (2/4)', W.winPct === 50);
+check('wins: W current streak 0 (lost last), best 2', W.currentWinStreak === 0 && W.bestWinStreak === 2);
+const L = statFor(winStats, 'L', 'Perde');
+check('wins: L record V-E-D 1-1-2 (mirror)', L.wins === 1 && L.draws === 1 && L.losses === 2);
+check('wins: L current streak 1 (won last)', L.currentWinStreak === 1 && L.bestWinStreak === 1);
+check('wins board: W on top', topByWins(winStats, 5)[0]?.tgUserId === 'W');
+check('win% board: gated to >= MIN_GAMES_FOR_WINRATE', topByWinPct(winStats, 5).every((p) => p.resultGames >= 3));
+check('win-streak board: W best 2 on top', topByBestWinStreak(winStats, 5)[0]?.tgUserId === 'W');
+// render: result lines appear on the card, comparison and group boards
+const cardW = renderPersonalCard(W, winStats);
+check('card: shows V-E-D and win%', cardW.includes('V-E-D 2-1-1') && cardW.includes('% de vitórias'));
+const compWL = renderComparison(W, L);
+check('comparison: bolds the wins leader (W=2 over L=1)', compWL.includes('Vitórias: **2** — 1'));
+check('group render: result boards present', renderStats(winStats, winStats, 'junho', null).includes('Mais vitórias'));
 
 // render: the month block + new boards appear in /stats output
 const groupRender = renderStats(allTime, monthStats, formatMonth(NOW), null);

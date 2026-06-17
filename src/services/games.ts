@@ -9,6 +9,7 @@ import { CHECKIN_WINDOW_MS, GROUP_PING, RSVP_CLOSE_BEFORE_KICKOFF_MS } from '../
 import { countVoters, pickWinner, tallyVotes } from '../core/voting';
 import { confirmedIds, splitSquad } from '../core/rsvp';
 import { dueNudges } from '../core/nudges';
+import { postTeamsPlaceholder } from './teams';
 import { renderVoteMessage, renderVoteResult, renderVoteTie } from '../render/vote-message';
 import { renderRsvpMessage } from '../render/rsvp-message';
 import { renderCheckinBoard } from '../render/checkin-message';
@@ -308,6 +309,8 @@ export async function closeRsvp(api: Sender, repo: Repo, game: Game, now: number
     await rerenderRsvp(api, repo, { ...game, status: 'LOCKED' }, 'locked');
     const names = split.confirmed.map((p, i) => `${i + 1}. ${esc(p.displayName)}`).join('\n');
     await send(api, game.chatId, M.rsvpClosedFinal(winnerLabel, game.locationNote, names));
+    // Auto-open the (public) team-formation board; the admin assigns teams privately.
+    await postTeamsPlaceholder(api, repo, { ...game, status: 'LOCKED' }, now);
   } else {
     await repo.setStatus(game.id, 'CANCELLED', now);
     await rerenderRsvp(api, repo, { ...game, status: 'CANCELLED' }, 'cancelled');

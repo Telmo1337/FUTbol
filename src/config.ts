@@ -19,6 +19,9 @@ export const CHECKIN_WINDOW_MS = 5 * HOUR;
 /** Minimum confirmed games before a player is ranked on the 🏅 reliability board. */
 export const MIN_GAMES_TO_RANK = 3;
 
+/** Minimum games-with-a-result before a player is ranked on the 🎯 win-rate board. */
+export const MIN_GAMES_FOR_WINRATE = 3;
+
 /** How many names to show per leaderboard section in /stats. */
 export const LEADERBOARD_TOP_N = 5;
 

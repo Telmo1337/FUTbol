@@ -23,6 +23,12 @@ export interface Env {
    * Sunday cron (interactions already know their own channel). Empty = feature off.
    */
   GAME_CHANNEL_ID?: string;
+  /**
+   * Discord channel id where the `/testjogo` seed command is allowed to run. Lets you
+   * exercise the full equipas→resultado flow with fake players in a private test channel
+   * (stats are per-channel, so it never touches the real group). Empty = command off.
+   */
+  TEST_CHANNEL_ID?: string;
   TZ?: string;
 }
 
@@ -39,6 +45,9 @@ export type RsvpStatus = 'IN' | 'OUT' | 'MAYBE';
 
 /** How a check-in (= player present) got recorded. */
 export type CheckinSource = 'self' | 'admin';
+
+/** Which team a player was on for a game's result. 'A' = Alpha, 'B' = Beta. */
+export type ResultSide = 'A' | 'B';
 
 export interface Player {
   tgUserId: string; // Discord user id (snowflake)
@@ -63,6 +72,8 @@ export interface Game {
   voteMsgId: string | null; // Discord message id of the live vote board
   rsvpMsgId: string | null;
   checkinMsgId: string | null;
+  teamsMsgId: string | null; // the public "⚔️ Equipas" board (flips from "a montar" → revealed)
+  teamsLockedAt: number | null; // unix ms UTC, set when the admin publishes the teams
   flagGameOnSent: boolean;
   flagShortWarnSent: boolean;
   flagNonrespPingSent: boolean;

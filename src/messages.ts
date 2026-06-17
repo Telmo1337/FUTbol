@@ -4,7 +4,7 @@
 // To add another language later, swap this object behind a tiny selector.
 
 import { esc } from './util';
-import { MIN_GAMES_TO_RANK, PERFECT_RECORD_MIN_GAMES } from './config';
+import { MIN_GAMES_TO_RANK, MIN_GAMES_FOR_WINRATE, PERFECT_RECORD_MIN_GAMES } from './config';
 
 export const M = {
   start:
@@ -19,6 +19,8 @@ export const M = {
     '`/jogo` — ver o jogo atual\n' +
     '`/fecharvotacao` — fechar já a votação *(só admin)*\n' +
     '`/cancelar` — cancelar o jogo atual *(só admin)*\n' +
+    '`/equipas` — montar/editar as equipas do jogo *(só admin)* ⚔️\n' +
+    '`/resultado` — registar o placar do último jogo *(só admin)* 📊\n' +
     '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
     '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
     '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
@@ -45,8 +47,10 @@ export const M = {
   errMinGtCap: '⚠️ O mínimo de jogadores não pode ser maior que o máximo.',
   errBadDate: (line: string) => `⚠️ Não percebi a data: \`${esc(line)}\`. Usa o formato \`DD/MM HH:MM\`.`,
   errNoFutureSlots: '⚠️ Todas as datas estão no passado. Usa datas futuras.',
+  errBadGoals: '⚠️ Os golos têm de ser números inteiros (0 ou mais).',
   gameAlreadyActive: '⚠️ Já existe um jogo ativo. Usa `/cancelar` antes de abrir outro.',
   noActiveGame: 'Não há nenhum jogo ativo. Abre um com `/novojogo`.',
+  noTeamGame: 'Não há nenhum jogo com equipas. Fecha as inscrições de um jogo primeiro.',
 
   tieAdminPrompt: '🤝 **Empate na votação!** Admin, escolhe o horário 👇',
 
@@ -115,6 +119,10 @@ export const M = {
     checkinClosed: 'O check-in já fechou.',
     checkinNotInList: 'Não estavas na lista deste jogo 🤔',
     ghostCleared: 'Corrigido — já não é fantasma ✅',
+    teamsNeedBoth: '⚠️ Precisas de pelo menos um jogador em cada equipa.',
+    teamsPublished: 'Equipas publicadas no canal ✅',
+    resultNoTeams: '⚠️ Este jogo ainda não tem equipas fechadas.',
+    resultSaved: 'Resultado registado ✅',
     error: 'Algo correu mal 😬',
   },
 
@@ -139,6 +147,49 @@ export const M = {
     footer: '📊 Ranking completo em `/stats`',
     ghostButton: (name: string) => `✅ ${name} jogou`,
     empty: '— ninguém —',
+  },
+
+  // ---- ⚔️ Equipas (team formation) ----
+  teams: {
+    // Public placeholder, auto-posted when the squad is confirmed. Flips to the board below.
+    placeholderTitle: '⚔️ **Equipas a caminho**',
+    placeholderBody: 'O admin vai montar as equipas para este jogo 👇',
+    placeholderButton: '⚙️ Montar equipas (admin)',
+    // The private (ephemeral) panel only the admin sees while choosing.
+    panelTitle: '⚙️ **Montar equipas** *(só tu vês isto)*',
+    panelHint: 'Escolhe quem fica em cada equipa. Quem deixares de fora não jogou.',
+    selectAlphaPlaceholder: 'Escolher a Equipa Alpha…',
+    selectBetaPlaceholder: 'Escolher a Equipa Beta…',
+    lockButton: '🔒 Fechar equipas',
+    // The published public board (everyone sees the teams).
+    boardTitle: '⚔️ **Equipas**',
+    alpha: (n: number) => `🅰️ **Alpha (${n})**`,
+    beta: (n: number) => `🅱️ **Beta (${n})**`,
+    out: (n: number) => `🪑 **De fora (${n})**`,
+    empty: '— ninguém —',
+    publishedHint: '*Admin: edita as equipas ou mete o resultado quando o jogo acabar 👇*',
+    editButton: '✏️ Editar equipas',
+    resultButton: '📊 Inserir resultado',
+  },
+
+  // ---- 📊 Resultado (score + result card) ----
+  result: {
+    modalTitle: 'Resultado do jogo',
+    fieldAlpha: 'Golos da Equipa Alpha',
+    fieldBeta: 'Golos da Equipa Beta',
+    cardTitle: '📊 **Resultado**',
+    score: (ga: number, gb: number) => `🅰️ **Alpha  ${ga} – ${gb}  Beta** 🅱️`,
+    winAlpha: '🏆 Vitória da **Alpha**!',
+    winBeta: '🏆 Vitória da **Beta**!',
+    draw: '🤝 **Empate**',
+    footer: '📊 Já conta para as estatísticas — `/stats`',
+  },
+
+  // ---- 🧪 /testjogo (test-channel-only seed) ----
+  test: {
+    disabled: '🔒 O `/testjogo` está desativado. Define `TEST_CHANNEL_ID` para o ativar.',
+    wrongChannel: '🔒 O `/testjogo` só corre no canal de testes.',
+    created: (n: number) => `🧪 Jogo de teste criado com ${n} jogadores confirmados. As equipas estão no canal 👇`,
   },
 
   // ---- /stats group leaderboard ----
@@ -171,6 +222,13 @@ export const M = {
     earlyBirdLine: (n: number) => `${n} ${n === 1 ? 'vez' : 'vezes'}`,
     perfectTitle: `💯 **Registo perfeito** *(100% em ≥${PERFECT_RECORD_MIN_GAMES} jogos)*`,
     perfectLine: (n: number) => `${n} ${n === 1 ? 'jogo' : 'jogos'}`,
+    // ---- result boards (V/E/D) ----
+    winsTitle: '🏆 **Mais vitórias**',
+    winsLine: (n: number) => `${n} ${n === 1 ? 'vitória' : 'vitórias'}`,
+    winPctTitle: `🎯 **Melhor % de vitórias** *(mín. ${MIN_GAMES_FOR_WINRATE} jogos)*`,
+    winPctLine: (pct: number, w: number, d: number, l: number) => `${pct}% *(${w}-${d}-${l})*`,
+    winStreakTitle: '🔝 **Maior série de vitórias**',
+    winStreakLine: (n: number) => `${n} seguidas`,
   },
 
   // ---- /eu personal card ----
@@ -182,6 +240,10 @@ export const M = {
       `🏅 Fiabilidade: a aquecer 🔥 *(faltam ${missing} ${missing === 1 ? 'jogo' : 'jogos'} p/ entrar no ranking)*`,
     streak: (cur: number, best: number) => `🔥 Sequência: **${cur}** *(melhor: ${best})*`,
     ghosts: (n: number) => `👻 Fantasma: **${n}** ${n === 1 ? 'vez' : 'vezes'}`,
+    // ---- result lines ----
+    wins: (w: number, d: number, l: number) => `🏆 Vitórias: **${w}** *(V-E-D ${w}-${d}-${l})*`,
+    winPct: (pct: number) => `🎯 % de vitórias: **${pct}%**`,
+    winStreak: (cur: number, best: number) => `🔝 Série de vitórias: **${cur}** *(melhor: ${best})*`,
     rankSuffix: (pos: number, total: number) => ` · ${pos}º de ${total}`,
     none: 'Ainda não tens jogos registados. Aparece num jogo e carrega em **Cheguei ✅**.',
   },
@@ -192,5 +254,9 @@ export const M = {
     reliability: (a: string, b: string) => `🏅 Fiabilidade: ${a} — ${b}`,
     streak: (a: string, b: string, ba: number, bb: number) => `🔥 Sequência: ${a} — ${b} *(melhor: ${ba} — ${bb})*`,
     ghosts: (a: string, b: string) => `👻 Fantasma: ${a} — ${b}`,
+    wins: (a: string, b: string) => `🏆 Vitórias: ${a} — ${b}`,
+    winPct: (a: string, b: string) => `🎯 % vitórias: ${a} — ${b}`,
+    winStreak: (a: string, b: string, ba: number, bb: number) =>
+      `🔝 Série de vitórias: ${a} — ${b} *(melhor: ${ba} — ${bb})*`,
   },
 };

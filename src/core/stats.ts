@@ -9,6 +9,7 @@
 //   🐦 early-bird = you were the FIRST to say "Vou" (lowest rankAt among the IN rows) for that game
 import {
   MIN_GAMES_TO_RANK,
+  MIN_GAMES_FOR_WINRATE,
   MIN_GAMES_FOR_MOTM,
   MOTM_MIN_APPEARANCES,
   MOTM_W_APPEARANCE,
@@ -17,7 +18,7 @@ import {
   MOTM_W_STREAK,
   PERFECT_RECORD_MIN_GAMES,
 } from '../config';
-import type { RsvpStatus } from '../types';
+import type { ResultSide, RsvpStatus } from '../types';
 
 export interface StatsGame {
   id: number;
@@ -30,11 +31,25 @@ export interface StatsRsvp {
   status: RsvpStatus;
   rankAt: number;
 }
+/** A recorded score for a game (goalsA = Alpha, goalsB = Beta). */
+export interface StatsResult {
+  gameId: number;
+  goalsA: number;
+  goalsB: number;
+}
+/** A player's team side for a game's result. */
+export interface StatsTeam {
+  gameId: number;
+  tgUserId: string;
+  side: ResultSide;
+}
 export interface StatsInput {
   games: StatsGame[]; // PLAYED games (any order)
   rsvps: StatsRsvp[]; // rsvp rows for those games
   presentKeys: Set<string>; // `${gameId}:${tgUserId}` for every present player
   names: Map<string, string>; // tgUserId -> display name
+  results: StatsResult[]; // scores for games that have one
+  teams: StatsTeam[]; // who played on which side, for games with teams
 }
 
 export interface PlayerStat {
@@ -47,6 +62,14 @@ export interface PlayerStat {
   currentStreak: number;
   bestStreak: number;
   earlyBirdWins: number; // games where you were the first to say "Vou"
+  // v3: results (over games where this player was on a team AND a score is recorded)
+  resultGames: number; // games-with-a-result this player played in
+  wins: number;
+  draws: number;
+  losses: number;
+  winPct: number | null; // wins/resultGames as %, null until resultGames >= MIN_GAMES_FOR_WINRATE
+  currentWinStreak: number;
+  bestWinStreak: number;
 }
 export interface Stats {
   totalGames: number;
@@ -81,16 +104,53 @@ export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
     else rsvpsByGame.set(r.gameId, [r]);
   }
 
-  // Everyone who ever appears (rsvp'd or showed up) gets a row.
+  const resultByGame = new Map<number, StatsResult>();
+  for (const r of input.results) resultByGame.set(r.gameId, r);
+  const teamsByGame = new Map<number, StatsTeam[]>();
+  for (const t of input.teams) {
+    const arr = teamsByGame.get(t.gameId);
+    if (arr) arr.push(t);
+    else teamsByGame.set(t.gameId, [t]);
+  }
+
+  // Everyone who ever appears (rsvp'd, showed up, or was put on a team) gets a row.
   const userIds = new Set<string>();
   for (const r of input.rsvps) userIds.add(r.tgUserId);
   for (const k of input.presentKeys) userIds.add(k.split(':')[1]);
+  for (const t of input.teams) userIds.add(t.tgUserId);
 
   const acc = new Map<
     string,
-    { appearances: number; confirmedFor: number; showedConfirmed: number; run: number; best: number; early: number }
+    {
+      appearances: number;
+      confirmedFor: number;
+      showedConfirmed: number;
+      run: number;
+      best: number;
+      early: number;
+      resultGames: number;
+      wins: number;
+      draws: number;
+      losses: number;
+      winRun: number;
+      bestWin: number;
+    }
   >();
-  for (const id of userIds) acc.set(id, { appearances: 0, confirmedFor: 0, showedConfirmed: 0, run: 0, best: 0, early: 0 });
+  for (const id of userIds)
+    acc.set(id, {
+      appearances: 0,
+      confirmedFor: 0,
+      showedConfirmed: 0,
+      run: 0,
+      best: 0,
+      early: 0,
+      resultGames: 0,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      winRun: 0,
+      bestWin: 0,
+    });
 
   for (const game of games) {
     const ordered = confirmedSquad(rsvpsByGame.get(game.id) ?? [], game.capPlayers); // IN rows by join time, capped
@@ -108,6 +168,32 @@ export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
       a.run = present ? a.run + 1 : 0;
       if (a.run > a.best) a.best = a.run;
     }
+
+    // v3: win/draw/loss for the players on a team, when this game has a recorded score.
+    // Win-streak runs over each player's OWN result-games in chronological order; a game
+    // they didn't play (no team row) is simply absent — it neither extends nor breaks it.
+    const result = resultByGame.get(game.id);
+    const gameTeams = teamsByGame.get(game.id);
+    if (result && gameTeams) {
+      for (const t of gameTeams) {
+        const a = acc.get(t.tgUserId);
+        if (!a) continue;
+        const mine = t.side === 'A' ? result.goalsA : result.goalsB;
+        const theirs = t.side === 'A' ? result.goalsB : result.goalsA;
+        a.resultGames++;
+        if (mine > theirs) {
+          a.wins++;
+          a.winRun++;
+          if (a.winRun > a.bestWin) a.bestWin = a.winRun;
+        } else if (mine < theirs) {
+          a.losses++;
+          a.winRun = 0;
+        } else {
+          a.draws++;
+          a.winRun = 0;
+        }
+      }
+    }
   }
 
   const players: PlayerStat[] = [];
@@ -122,6 +208,13 @@ export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
       currentStreak: a.run,
       bestStreak: a.best,
       earlyBirdWins: a.early,
+      resultGames: a.resultGames,
+      wins: a.wins,
+      draws: a.draws,
+      losses: a.losses,
+      winPct: a.resultGames >= MIN_GAMES_FOR_WINRATE ? Math.round((100 * a.wins) / a.resultGames) : null,
+      currentWinStreak: a.winRun,
+      bestWinStreak: a.bestWin,
     });
   }
 
@@ -179,6 +272,26 @@ export function perfectRecord(stats: Stats, n: number): PlayerStat[] {
     .slice(0, n);
 }
 
+// ---------- 🏆 result boards (only games with a recorded score) ----------
+export function topByWins(stats: Stats, n: number): PlayerStat[] {
+  return stats.players
+    .filter((p) => p.wins > 0)
+    .sort((a, b) => b.wins - a.wins || (b.winPct ?? -1) - (a.winPct ?? -1) || byName(a, b))
+    .slice(0, n);
+}
+export function topByWinPct(stats: Stats, n: number): PlayerStat[] {
+  return stats.players
+    .filter((p) => p.winPct != null)
+    .sort((a, b) => b.winPct! - a.winPct! || b.resultGames - a.resultGames || byName(a, b))
+    .slice(0, n);
+}
+export function topByBestWinStreak(stats: Stats, n: number): PlayerStat[] {
+  return stats.players
+    .filter((p) => p.bestWinStreak > 0)
+    .sort((a, b) => b.bestWinStreak - a.bestWinStreak || byName(a, b))
+    .slice(0, n);
+}
+
 // ---------- 🏆 Jogador do Mês (composite score over a period's stats) ----------
 /** Raw present-while-confirmed ratio (0..1), ungated — 0 when never confirmed. */
 export function reliabilityRatio(p: PlayerStat): number {
@@ -229,6 +342,13 @@ export function statFor(stats: Stats, userId: string, name: string): PlayerStat 
       currentStreak: 0,
       bestStreak: 0,
       earlyBirdWins: 0,
+      resultGames: 0,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      winPct: null,
+      currentWinStreak: 0,
+      bestWinStreak: 0,
     }
   );
 }

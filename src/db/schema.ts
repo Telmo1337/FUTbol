@@ -1,7 +1,7 @@
 // Drizzle table definitions — the single source of truth for typed queries.
 // Must stay in sync with migrations/0000_init.sql.
 import { sqliteTable, integer, text, primaryKey } from 'drizzle-orm/sqlite-core';
-import type { CheckinSource, GameStatus, RsvpStatus } from '../types';
+import type { CheckinSource, GameStatus, ResultSide, RsvpStatus } from '../types';
 
 // NOTE: id-bearing columns (tg_user_id, chat_id, created_by, *_msg_id) are TEXT —
 // they hold Discord snowflakes, which overflow JS numbers if read as integers.
@@ -29,6 +29,8 @@ export const games = sqliteTable('games', {
   voteMsgId: text('vote_msg_id'),
   rsvpMsgId: text('rsvp_msg_id'),
   checkinMsgId: text('checkin_msg_id'),
+  teamsMsgId: text('teams_msg_id'),
+  teamsLockedAt: integer('teams_locked_at'),
   flagGameOnSent: integer('flag_game_on_sent', { mode: 'boolean' }).notNull().default(false),
   flagShortWarnSent: integer('flag_short_warn_sent', { mode: 'boolean' }).notNull().default(false),
   flagNonrespPingSent: integer('flag_nonresp_ping_sent', { mode: 'boolean' }).notNull().default(false),
@@ -79,3 +81,23 @@ export const checkins = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.gameId, t.tgUserId] })],
 );
+
+// v3: teams. One row = this player played on side 'A' (Alpha) or 'B' (Beta).
+export const resultTeams = sqliteTable(
+  'result_teams',
+  {
+    gameId: integer('game_id').notNull(),
+    tgUserId: text('tg_user_id').notNull(),
+    side: text('side').$type<ResultSide>().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.gameId, t.tgUserId] })],
+);
+
+// v3: the score. One row per game with a recorded result. goals_a = Alpha, goals_b = Beta.
+export const results = sqliteTable('results', {
+  gameId: integer('game_id').primaryKey(),
+  goalsA: integer('goals_a').notNull(),
+  goalsB: integer('goals_b').notNull(),
+  recordedBy: text('recorded_by').notNull(),
+  recordedAt: integer('recorded_at').notNull(),
+});
