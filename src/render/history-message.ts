@@ -10,14 +10,17 @@ function winnerBadge(a: number, b: number): string {
   return a > b ? M.history.winAlpha : a < b ? M.history.winBeta : M.history.draw;
 }
 
-/** Global line tail: the Alpha–Beta score + winner, or "(sem resultado)". */
+/** Global line tail: the Alpha–Beta score + winner (+ the game's top scorer), or "(sem resultado)". */
 function globalDetail(e: HistoryEntry): string {
   if (e.goalsA == null || e.goalsB == null) return M.history.noResult;
-  return `${M.history.scoreGlobal(e.goalsA, e.goalsB)} · ${winnerBadge(e.goalsA, e.goalsB)}`;
+  const base = `${M.history.scoreGlobal(e.goalsA, e.goalsB)} · ${winnerBadge(e.goalsA, e.goalsB)}`;
+  return e.scorer ? `${base} · ${M.history.scorer(esc(e.scorer))}` : base;
 }
 
-/** Per-person line tail: their side + their own outcome (their goals first), or "(sem resultado)". */
+/** Per-person line tail: their side + their own outcome (their goals first) + their ⚽/🅰️ tally. */
 function personDetail(e: HistoryEntry): string {
+  const tally = M.history.personTally(e.myGoals, e.myAssists); // '' when 0/0
+  const withTally = (s: string) => (tally ? `${s} · ${tally}` : s);
   const sidePart = e.side ? M.history.side(e.side) : null;
   if (e.goalsA != null && e.goalsB != null) {
     if (e.side) {
@@ -29,13 +32,13 @@ function personDetail(e: HistoryEntry): string {
           : mine < theirs
             ? M.history.personLoss(mine, theirs)
             : M.history.personDraw(mine, theirs);
-      return `${sidePart} · ${outcome}`;
+      return withTally(`${sidePart} · ${outcome}`);
     }
     // Present, but never assigned to a team that game → fall back to the global score line.
-    return globalDetail(e);
+    return withTally(globalDetail(e));
   }
   // No score yet.
-  return sidePart ? `${sidePart} · ${M.history.noResult}` : M.history.noResult;
+  return withTally(sidePart ? `${sidePart} · ${M.history.noResult}` : M.history.noResult);
 }
 
 export function renderHistory(v: HistoryView): string {

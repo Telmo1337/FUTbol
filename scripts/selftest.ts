@@ -25,14 +25,19 @@ import {
   topByWins,
   topByWinPct,
   topByBestWinStreak,
+  topByGoals,
+  topByAssists,
   perfectRecord,
   playerOfTheMonth,
   reliabilityRawPct,
 } from '../src/core/stats';
 import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../src/services/teams';
+import { loadCaptureState } from '../src/services/capture';
+import { renderCapturePanel } from '../src/render/capture-message';
 import { seedTestGame } from '../src/services/testseed';
 import { loadHistory } from '../src/services/history';
-import { renderComparison, renderPersonalCard, renderStats } from '../src/render/stats-message';
+import { renderComparison, renderPersonalCard, renderStats, renderTopScorers } from '../src/render/stats-message';
+import { golosEnabled } from '../src/util';
 import { renderHistory } from '../src/render/history-message';
 import { historyComponents, parseCb } from '../src/discord/components';
 
@@ -260,6 +265,38 @@ await recordResult(sender, repo, game, 1, 4, '1', game.checkinCloseAt! + 30);
 const sR2 = await loadStats(repo, chatId);
 check('result: re-recording overwrites the score', statFor(sR2, '2', 'u2').wins === 0 && statFor(sR2, '2', 'u2').losses === 1 && statFor(sR2, '3', 'u3').wins === 1);
 
+// --- v4 e2e: ⚽ golos/assistências capture on the played game ---
+// Teams here: Alpha = user 2, Beta = users 3 & 4. Score is Alpha 1–4 Beta.
+await repo.addGoalEvent(game.id, '3', 'G', game.checkinCloseAt! + 40);
+await repo.addGoalEvent(game.id, '3', 'G', game.checkinCloseAt! + 41);
+await repo.addGoalEvent(game.id, '4', 'G', game.checkinCloseAt! + 42);
+await repo.addGoalEvent(game.id, '4', 'G', game.checkinCloseAt! + 43); // extra goal, undone below
+await repo.undoLastGoalEvent(game.id, 'G'); // removes user 4's most recent goal
+await repo.addGoalEvent(game.id, '2', 'A', game.checkinCloseAt! + 44);
+const capState = await loadCaptureState(repo, game);
+check('capture: tallies — user 3 has 2 goals, user 4 has 1', (capState.goals.get('3') ?? 0) === 2 && (capState.goals.get('4') ?? 0) === 1);
+check('capture: undo removed the extra goal (3 goals total)', [...capState.goals.values()].reduce((a, b) => a + b, 0) === 3);
+check('capture: assist recorded for user 2', (capState.assists.get('2') ?? 0) === 1);
+const capPanel = renderCapturePanel(capState);
+check('capture panel: shows the score line + a scorer tally', capPanel.includes('🅰️ 1–4 🅱️') && capPanel.includes('⚽×2'));
+const sG = await loadStats(repo, chatId);
+check('stats: golos counted (user 3 = 2, top scorer)', statFor(sG, '3', 'u3').goals === 2 && topByGoals(sG, 5)[0]?.tgUserId === '3');
+check('stats: assists counted (user 2 = 1, top assister)', statFor(sG, '2', 'u2').assists === 1 && topByAssists(sG, 5)[0]?.tgUserId === '2');
+check('render: ⚽ Goleadores + 🅰️ Assistências boards present', renderStats(sG, sG, 'junho', null).includes('Goleadores') && renderStats(sG, sG, 'junho', null).includes('Assistências'));
+check('render: /topmarcadores shows just the two boards', renderTopScorers(sG).includes('Goleadores') && renderTopScorers(sG).includes('Assistências'));
+
+// --- GOLOS_ENABLED feature flag: default on; "false"/"0"/"off"/"no" turn it off ---
+check('flag: default (unset) is ON', golosEnabled({}) === true && golosEnabled({ GOLOS_ENABLED: 'true' }) === true);
+check('flag: explicit off values turn it OFF', !golosEnabled({ GOLOS_ENABLED: 'false' }) && !golosEnabled({ GOLOS_ENABLED: '0' }) && !golosEnabled({ GOLOS_ENABLED: 'off' }));
+check('flag off: /stats hides the golos boards', !renderStats(sG, sG, 'junho', null, false).includes('Goleadores'));
+check('flag off: personal card hides the ⚽/🅰️ lines', !renderPersonalCard(statFor(sG, '3', 'u3'), sG, false).includes('⚽ Golos'));
+check('flag off: comparison hides the ⚽/🅰️ rows', !renderComparison(statFor(sG, '3', 'u3'), statFor(sG, '4', 'u4'), false).includes('⚽ Golos'));
+check(
+  'flag off: /historico hides the scorer (shown when on)',
+  renderHistory(await loadHistory(repo, chatId, 0, null, null, true)).includes('⚽') &&
+    !renderHistory(await loadHistory(repo, chatId, 0, null, null, false)).includes('⚽'),
+);
+
 // --- 📜 histórico: e2e page off the played game + pure render/pagination ---
 // chatId now has exactly 1 PLAYED game, score Alpha 1–4 Beta (user 2 = Alpha loss, 3 & 4 = Beta win).
 const hAll = await loadHistory(repo, chatId, 0, null, null);
@@ -298,6 +335,7 @@ const hp0 = await loadHistory(repo, histChat, 0, null, null);
 check('history: 6 games → 2 pages, first page full (5)', hp0.totalPages === 2 && hp0.entries.length === 5);
 check('history: newest-first ordering', hp0.entries.every((e, k) => k === 0 || hp0.entries[k - 1].kickoffAt >= e.kickoffAt));
 check('history: every seeded game has a score', hp0.entries.every((e) => e.goalsA != null && e.goalsB != null));
+check('history: seeded games show a ⚽ top scorer', renderHistory(hp0).includes('⚽ Tester'));
 const hp1 = await loadHistory(repo, histChat, 1, null, null);
 check('history: second page has the remaining 1', hp1.page === 1 && hp1.entries.length === 1);
 check('history: page clamps past the end', (await loadHistory(repo, histChat, 99, null, null)).page === 1);
@@ -333,6 +371,7 @@ const sStats = computeStats({
   ]),
   results: [],
   teams: [],
+  events: [],
 });
 const p10 = statFor(sStats, '10', 'Ana');
 check('computeStats: p10 appearances 3 / confirmedFor 4', p10.appearances === 3 && p10.confirmedFor === 4);
@@ -390,6 +429,7 @@ const monthInput = {
   ]),
   results: [],
   teams: [],
+  events: [],
 };
 const allTime = computeStats(monthInput);
 const monthStats = computeStats(monthInput, monthWindow(NOW)); // NOW is June 2026
@@ -420,6 +460,7 @@ const perfectInput = {
   ]),
   results: [],
   teams: [],
+  events: [],
 };
 const perfStats = computeStats(perfectInput);
 check('perfect record: P qualifies (5/5), Q excluded (1 ghost)', perfectRecord(perfStats, 5).map((p) => p.tgUserId).join() === 'P');
@@ -447,6 +488,7 @@ const winInput = {
     { gameId: g, tgUserId: 'W', side: 'A' as const },
     { gameId: g, tgUserId: 'L', side: 'B' as const },
   ]),
+  events: [],
 };
 const winStats = computeStats(winInput);
 const W = statFor(winStats, 'W', 'Vence');

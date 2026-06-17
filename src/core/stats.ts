@@ -18,7 +18,7 @@ import {
   MOTM_W_STREAK,
   PERFECT_RECORD_MIN_GAMES,
 } from '../config';
-import type { ResultSide, RsvpStatus } from '../types';
+import type { EventKind, ResultSide, RsvpStatus } from '../types';
 
 export interface StatsGame {
   id: number;
@@ -43,6 +43,12 @@ export interface StatsTeam {
   tgUserId: string;
   side: ResultSide;
 }
+/** A scoring event: one goal ('G') or assist ('A') by a player in a game. */
+export interface StatsEvent {
+  gameId: number;
+  tgUserId: string;
+  kind: EventKind;
+}
 export interface StatsInput {
   games: StatsGame[]; // PLAYED games (any order)
   rsvps: StatsRsvp[]; // rsvp rows for those games
@@ -50,6 +56,7 @@ export interface StatsInput {
   names: Map<string, string>; // tgUserId -> display name
   results: StatsResult[]; // scores for games that have one
   teams: StatsTeam[]; // who played on which side, for games with teams
+  events: StatsEvent[]; // golos + assistências, one row per event
 }
 
 export interface PlayerStat {
@@ -70,6 +77,9 @@ export interface PlayerStat {
   winPct: number | null; // wins/resultGames as %, null until resultGames >= MIN_GAMES_FOR_WINRATE
   currentWinStreak: number;
   bestWinStreak: number;
+  // v4: offensive contribution (counted from game_events)
+  goals: number;
+  assists: number;
 }
 export interface Stats {
   totalGames: number;
@@ -112,12 +122,19 @@ export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
     if (arr) arr.push(t);
     else teamsByGame.set(t.gameId, [t]);
   }
+  const eventsByGame = new Map<number, StatsEvent[]>();
+  for (const e of input.events) {
+    const arr = eventsByGame.get(e.gameId);
+    if (arr) arr.push(e);
+    else eventsByGame.set(e.gameId, [e]);
+  }
 
-  // Everyone who ever appears (rsvp'd, showed up, or was put on a team) gets a row.
+  // Everyone who ever appears (rsvp'd, showed up, was put on a team, or scored) gets a row.
   const userIds = new Set<string>();
   for (const r of input.rsvps) userIds.add(r.tgUserId);
   for (const k of input.presentKeys) userIds.add(k.split(':')[1]);
   for (const t of input.teams) userIds.add(t.tgUserId);
+  for (const e of input.events) userIds.add(e.tgUserId);
 
   const acc = new Map<
     string,
@@ -134,6 +151,8 @@ export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
       losses: number;
       winRun: number;
       bestWin: number;
+      goals: number;
+      assists: number;
     }
   >();
   for (const id of userIds)
@@ -150,6 +169,8 @@ export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
       losses: 0,
       winRun: 0,
       bestWin: 0,
+      goals: 0,
+      assists: 0,
     });
 
   for (const game of games) {
@@ -194,6 +215,15 @@ export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
         }
       }
     }
+
+    // v4: golos + assistências — count each event toward its scorer (scoping is automatic,
+    // since we only iterate games already filtered to the window).
+    for (const ev of eventsByGame.get(game.id) ?? []) {
+      const a = acc.get(ev.tgUserId);
+      if (!a) continue;
+      if (ev.kind === 'G') a.goals++;
+      else a.assists++;
+    }
   }
 
   const players: PlayerStat[] = [];
@@ -215,6 +245,8 @@ export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
       winPct: a.resultGames >= MIN_GAMES_FOR_WINRATE ? Math.round((100 * a.wins) / a.resultGames) : null,
       currentWinStreak: a.winRun,
       bestWinStreak: a.bestWin,
+      goals: a.goals,
+      assists: a.assists,
     });
   }
 
@@ -292,6 +324,20 @@ export function topByBestWinStreak(stats: Stats, n: number): PlayerStat[] {
     .slice(0, n);
 }
 
+// ---------- ⚽ goleadores / 🅰️ assistências (separate boards, never one ranking) ----------
+export function topByGoals(stats: Stats, n: number): PlayerStat[] {
+  return stats.players
+    .filter((p) => p.goals > 0)
+    .sort((a, b) => b.goals - a.goals || b.assists - a.assists || byName(a, b))
+    .slice(0, n);
+}
+export function topByAssists(stats: Stats, n: number): PlayerStat[] {
+  return stats.players
+    .filter((p) => p.assists > 0)
+    .sort((a, b) => b.assists - a.assists || b.goals - a.goals || byName(a, b))
+    .slice(0, n);
+}
+
 // ---------- 🏆 Jogador do Mês (composite score over a period's stats) ----------
 /** Raw present-while-confirmed ratio (0..1), ungated — 0 when never confirmed. */
 export function reliabilityRatio(p: PlayerStat): number {
@@ -349,6 +395,8 @@ export function statFor(stats: Stats, userId: string, name: string): PlayerStat 
       winPct: null,
       currentWinStreak: 0,
       bestWinStreak: 0,
+      goals: 0,
+      assists: 0,
     }
   );
 }

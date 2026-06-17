@@ -2,7 +2,7 @@
 // custom_id is capped at 100 chars (plenty), so we keep the short codes from v1
 // (e.g. "r:12:I", "v:12:34", "ug:12:<userId>").
 import { M } from '../messages';
-import type { ResultSide, RsvpStatus, Slot } from '../types';
+import type { EventKind, ResultSide, RsvpStatus, Slot } from '../types';
 
 export type ParsedCb =
   | { kind: 'vote'; gameId: number; slotId: number }
@@ -15,6 +15,10 @@ export type ParsedCb =
   | { kind: 'teamLock'; gameId: number } // admin publishes the teams
   | { kind: 'teamEdit'; gameId: number } // admin reopens the panel from the public board
   | { kind: 'resultOpen'; gameId: number } // admin opens the score modal
+  | { kind: 'captureOpen'; gameId: number } // admin opens the golos/assists panel from the result card
+  | { kind: 'captureAdd'; gameId: number; event: EventKind } // admin picks a scorer/assister (+1)
+  | { kind: 'captureUndo'; gameId: number; event: EventKind } // admin taps "anular último"
+  | { kind: 'captureDone'; gameId: number } // admin closes the panel into a read-only summary
   | { kind: 'historyPage'; page: number; tgUserId: string | null }; // ◀️/▶️ in /historico
 
 const RSVP_CODE: Record<string, RsvpStatus | undefined> = { I: 'IN', O: 'OUT', M: 'MAYBE' };
@@ -60,6 +64,12 @@ export function parseCb(data: string): ParsedCb | null {
   if (p[0] === 'tlock' && p.length === 2) return { kind: 'teamLock', gameId };
   if (p[0] === 'tedit' && p.length === 2) return { kind: 'teamEdit', gameId };
   if (p[0] === 'ropen' && p.length === 2) return { kind: 'resultOpen', gameId };
+  if (p[0] === 'ggopen' && p.length === 2) return { kind: 'captureOpen', gameId };
+  if ((p[0] === 'ggG' || p[0] === 'ggA') && p.length === 2)
+    return { kind: 'captureAdd', gameId, event: p[0] === 'ggG' ? 'G' : 'A' };
+  if ((p[0] === 'gguG' || p[0] === 'gguA') && p.length === 2)
+    return { kind: 'captureUndo', gameId, event: p[0] === 'gguG' ? 'G' : 'A' };
+  if (p[0] === 'ggdone' && p.length === 2) return { kind: 'captureDone', gameId };
   return null;
 }
 
@@ -200,6 +210,53 @@ export function teamsBoardComponents(gameId: number): ActionRow[] {
       ],
     },
   ];
+}
+
+// ---- ⚽ capture panel (golos + assistências) ----
+// No `default` on the options: each render is a fresh select, so re-picking the same player
+// fires another +1 — that's how the admin records a player's 2nd/3rd goal.
+function captureSelectRow(gameId: number, event: EventKind, players: TeamMember[]): SelectRow {
+  const options: SelectOption[] = players.slice(0, 25).map((m) => ({
+    label: m.displayName.slice(0, 100),
+    value: m.tgUserId,
+  }));
+  return {
+    type: 1,
+    components: [
+      {
+        type: 3,
+        custom_id: event === 'G' ? `ggG:${gameId}` : `ggA:${gameId}`,
+        placeholder: event === 'G' ? M.capture.goalSelect : M.capture.assistSelect,
+        min_values: 1,
+        max_values: 1,
+        options,
+      },
+    ],
+  };
+}
+
+/** The admin's private (ephemeral) capture panel: ⚽ select, 🅰️ select, then undo/undo/done. */
+export function capturePanelComponents(gameId: number, players: TeamMember[]): (SelectRow | ActionRow)[] {
+  const rows: (SelectRow | ActionRow)[] = [];
+  // A string select must carry 1–25 options — omit the selects entirely if nobody played
+  // (defensive: today result_teams is always non-empty when a result card exists).
+  if (players.length > 0) {
+    rows.push(captureSelectRow(gameId, 'G', players), captureSelectRow(gameId, 'A', players));
+  }
+  rows.push({
+    type: 1,
+    components: [
+      button(M.capture.undoGoal, `gguG:${gameId}`, STYLE.secondary),
+      button(M.capture.undoAssist, `gguA:${gameId}`, STYLE.secondary),
+      button(M.capture.done, `ggdone:${gameId}`, STYLE.success),
+    ],
+  });
+  return rows;
+}
+
+/** The admin-only "⚽ Golos & assists" button on the public result card (reopen the panel). */
+export function captureBoardComponents(gameId: number): ActionRow[] {
+  return [{ type: 1, components: [button(M.teams.captureButton, `ggopen:${gameId}`, STYLE.primary)] }];
 }
 
 // ---- 📜 history pagination ----

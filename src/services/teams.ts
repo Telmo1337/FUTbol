@@ -7,7 +7,7 @@ import type { Game, ResultSide } from '../types';
 import { splitSquad } from '../core/rsvp';
 import { formatDay } from '../core/time';
 import { boardEmbed } from '../discord/embeds';
-import { teamsBoardComponents, teamsPlaceholderComponents, type TeamMember } from '../discord/components';
+import { captureBoardComponents, teamsBoardComponents, teamsPlaceholderComponents, type TeamMember } from '../discord/components';
 import { renderResultCard, renderTeamsBoard, renderTeamsPlaceholder, type TeamsView } from '../render/teams-message';
 
 /** Everything the panel/board needs: the confirmed squad (select options) + current sides. */
@@ -77,7 +77,7 @@ export async function publishTeams(api: Sender, repo: Repo, game: Game, now: num
   return true;
 }
 
-/** Save the score and post the public result card. */
+/** Save the score and post the public result card. `captureButton` adds the ⚽ panel button. */
 export async function recordResult(
   api: Sender,
   repo: Repo,
@@ -86,11 +86,18 @@ export async function recordResult(
   goalsB: number,
   recordedBy: string,
   now: number,
+  captureButton = true,
 ): Promise<void> {
   await repo.saveResult(game.id, goalsA, goalsB, recordedBy, now);
   const state = await loadTeamsState(repo, game);
   // Date the card from the winning slot's kickoff, so it's always clear which game this is.
   const slot = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
   const dayLabel = slot ? formatDay(slot.kickoffAt) : '';
-  await sendBoard(api, game.chatId, renderResultCard(state.view, goalsA, goalsB, dayLabel));
+  // The card carries an admin-only "⚽ Golos & assists" button (when the feature is on).
+  await sendBoard(
+    api,
+    game.chatId,
+    renderResultCard(state.view, goalsA, goalsB, dayLabel),
+    captureButton ? captureBoardComponents(game.id) : [],
+  );
 }

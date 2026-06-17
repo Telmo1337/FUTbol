@@ -1,9 +1,9 @@
 // Repository: the ONLY module that runs SQL. Everything else calls these methods.
 import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { createDb } from './client';
-import { players, games, candidateSlots, votes, rsvps, checkins, resultTeams, results } from './schema';
+import { players, games, candidateSlots, votes, rsvps, checkins, resultTeams, results, gameEvents } from './schema';
 import { GAME_STATUSES_ACTIVE } from '../config';
-import type { Checkin, CheckinSource, Game, GameStatus, ResultSide, RsvpStatus, RsvpView, Slot, Vote } from '../types';
+import type { Checkin, CheckinSource, EventKind, Game, GameStatus, ResultSide, RsvpStatus, RsvpView, Slot, Vote } from '../types';
 
 /** A finished game with its kickoff time, for stats. */
 export interface PlayedGame {
@@ -296,6 +296,39 @@ export function createRepo(d1: D1Database) {
       return row ?? null;
     },
 
+    // ---------- game events: golos + assistências (v4) ----------
+    /** Append one scoring event (a goal or an assist) for a player in a game. */
+    async addGoalEvent(gameId: number, tgUserId: string, kind: EventKind, now: number): Promise<void> {
+      await db.insert(gameEvents).values({ gameId, tgUserId, kind, createdAt: now }).run();
+    },
+
+    /** Remove the most recent event of a kind for a game (the "anular último" button). True if one was deleted. */
+    async undoLastGoalEvent(gameId: number, kind: EventKind): Promise<boolean> {
+      const res = (await db.run(
+        sql`DELETE FROM game_events WHERE id = (SELECT max(id) FROM game_events WHERE game_id = ${gameId} AND kind = ${kind})`,
+      )) as unknown as D1Result;
+      return (res.meta?.changes ?? 0) > 0;
+    },
+
+    /** All scoring events for one game (for the capture panel tallies + a game's scorers). */
+    async getGameEvents(gameId: number): Promise<{ tgUserId: string; kind: EventKind }[]> {
+      return db
+        .select({ tgUserId: gameEvents.tgUserId, kind: gameEvents.kind })
+        .from(gameEvents)
+        .where(eq(gameEvents.gameId, gameId));
+    },
+
+    /** Scoring events across many games (stats aggregation + the /historico page). */
+    async getGoalEventsForGames(
+      gameIds: number[],
+    ): Promise<{ gameId: number; tgUserId: string; kind: EventKind }[]> {
+      if (gameIds.length === 0) return [];
+      return db
+        .select({ gameId: gameEvents.gameId, tgUserId: gameEvents.tgUserId, kind: gameEvents.kind })
+        .from(gameEvents)
+        .where(inArray(gameEvents.gameId, gameIds));
+    },
+
     /** Delete every game (and its child rows) created by a given author in a chat. For /testjogo cleanup. */
     async deleteGamesByCreator(chatId: string, createdBy: string): Promise<number> {
       const rows = await db
@@ -311,6 +344,7 @@ export function createRepo(d1: D1Database) {
         db.delete(checkins).where(inArray(checkins.gameId, ids)).run(),
         db.delete(resultTeams).where(inArray(resultTeams.gameId, ids)).run(),
         db.delete(results).where(inArray(results.gameId, ids)).run(),
+        db.delete(gameEvents).where(inArray(gameEvents.gameId, ids)).run(),
         db.delete(candidateSlots).where(inArray(candidateSlots.gameId, ids)).run(),
       ]);
       await db.delete(games).where(inArray(games.id, ids)).run();

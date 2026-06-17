@@ -29,6 +29,12 @@ export interface Env {
    * (stats are per-channel, so it never touches the real group). Empty = command off.
    */
   TEST_CHANNEL_ID?: string;
+  /**
+   * Master switch for the ⚽ golos/assistências feature. ON by default; set to
+   * "false"/"0"/"off" to hide all of it (boards, capture panel, /topmarcadores) without
+   * a code change. See util.golosEnabled.
+   */
+  GOLOS_ENABLED?: string;
   TZ?: string;
 }
 
@@ -48,6 +54,9 @@ export type CheckinSource = 'self' | 'admin';
 
 /** Which team a player was on for a game's result. 'A' = Alpha, 'B' = Beta. */
 export type ResultSide = 'A' | 'B';
+
+/** An individual scoring event in a game. 'G' = golo (goal), 'A' = assistência (assist). */
+export type EventKind = 'G' | 'A';
 
 export interface Player {
   tgUserId: string; // Discord user id (snowflake)

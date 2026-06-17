@@ -20,6 +20,7 @@ export const M = {
     '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
     '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
     '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
+    '`/topmarcadores` — melhores marcadores e assistentes ⚽\n' +
     '`/historico` — histórico de jogos (todos ou de um jogador) 📜\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem',
@@ -31,6 +32,7 @@ export const M = {
     '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
     '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
     '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
+    '`/topmarcadores` — melhores marcadores e assistentes ⚽\n' +
     '`/historico` — histórico de jogos (todos ou de um jogador) 📜\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem\n\n' +
@@ -46,6 +48,9 @@ export const M = {
     'Para te tornares admin, mete este id em `ADMIN_IDS` (ver README).',
 
   notAdmin: '🔒 Só o admin pode fazer isto.',
+
+  // Shown when the ⚽ golos/assistências feature is switched off (GOLOS_ENABLED=false).
+  golosOff: '⚽ A contagem de golos e assistências está desativada de momento.',
 
   novojogoUsage:
     '📝 **Como abrir um jogo** *(só admin)*\n\n' +
@@ -184,6 +189,7 @@ export const M = {
     publishedHint: '*Admin: edita as equipas ou mete o resultado quando o jogo acabar 👇*',
     editButton: '✏️ Editar equipas',
     resultButton: '📊 Inserir resultado',
+    captureButton: '⚽ Golos & assists',
   },
 
   // ---- 📊 Resultado (score + result card) ----
@@ -197,6 +203,26 @@ export const M = {
     winBeta: '🏆 Vitória da **Beta**!',
     draw: '🤝 **Empate**',
     footer: '📊 Já conta para as estatísticas — `/stats`',
+  },
+
+  // ---- ⚽ Captura de golos/assistências (painel ephemeral, só admin) ----
+  capture: {
+    title: (day: string) => (day ? `⚽ **Golos & Assistências — ${day}**` : '⚽ **Golos & Assistências**'),
+    score: (ga: number, gb: number) => `🅰️ ${ga}–${gb} 🅱️`,
+    tally: (assigned: number, total: number) => `golos atribuídos: ${assigned}/${total}`,
+    hint: '*Escolhe quem marcou/assistiu — cada escolha soma +1. Enganaste-te? "Anular" tira o último.*',
+    empty: '*Ainda sem golos nem assistências. Escolhe o marcador no menu 👇*',
+    // one line per player with at least one event: "• Tester 1  ⚽×2  🅰️×1"
+    playerLine: (name: string, goals: number, assists: number) =>
+      `• ${name}${goals > 0 ? `  ⚽×${goals}` : ''}${assists > 0 ? `  🅰️×${assists}` : ''}`,
+    goalSelect: '⚽ Marcar golo…',
+    assistSelect: '🅰️ Marcar assistência…',
+    undoGoal: '↩️ Anular golo',
+    undoAssist: '↩️ Anular assist',
+    done: '✅ Concluir',
+    // shown after "Concluir" (read-only, no buttons)
+    doneTitle: (day: string) => (day ? `⚽ **Golos & Assistências — ${day}**` : '⚽ **Golos & Assistências**'),
+    doneFooter: '📊 Já conta para as estatísticas — `/stats`',
   },
 
   // ---- 🧪 /testjogo (test-channel-only seed) ----
@@ -244,6 +270,14 @@ export const M = {
     winPctLine: (pct: number, w: number, d: number, l: number) => `${pct}% *(${w}-${d}-${l})*`,
     winStreakTitle: '🔝 **Maior série de vitórias**',
     winStreakLine: (n: number) => `${n} seguidas`,
+    // ---- ⚽ goleadores / 🅰️ assistências (boards separadas) ----
+    goalsTitle: '⚽ **Goleadores**',
+    goalsLine: (n: number) => `${n} ${n === 1 ? 'golo' : 'golos'}`,
+    assistsTitle: '🅰️ **Assistências**',
+    assistsLine: (n: number) => `${n} ${n === 1 ? 'assistência' : 'assistências'}`,
+    // ---- /topmarcadores (só os dois quadros, à parte do /stats cheio) ----
+    topTitle: '⚽ **Marcadores & Assistências**',
+    topNone: 'Ainda não há golos nem assistências registados. Aparecem aqui depois do primeiro jogo com marcadores. ⚽',
   },
 
   // ---- /eu personal card ----
@@ -259,6 +293,8 @@ export const M = {
     wins: (w: number, d: number, l: number) => `🏆 Vitórias: **${w}** *(V-E-D ${w}-${d}-${l})*`,
     winPct: (pct: number) => `🎯 % de vitórias: **${pct}%**`,
     winStreak: (cur: number, best: number) => `🔝 Série de vitórias: **${cur}** *(melhor: ${best})*`,
+    goals: (n: number) => `⚽ Golos: **${n}**`,
+    assists: (n: number) => `🅰️ Assistências: **${n}**`,
     rankSuffix: (pos: number, total: number) => ` · ${pos}º de ${total}`,
     none: 'Ainda não tens jogos registados. Aparece num jogo e carrega em **Cheguei ✅**.',
   },
@@ -273,6 +309,8 @@ export const M = {
     winPct: (a: string, b: string) => `🎯 % vitórias: ${a} — ${b}`,
     winStreak: (a: string, b: string, ba: number, bb: number) =>
       `🔝 Série de vitórias: ${a} — ${b} *(melhor: ${ba} — ${bb})*`,
+    goals: (a: string, b: string) => `⚽ Golos: ${a} — ${b}`,
+    assists: (a: string, b: string) => `🅰️ Assistências: ${a} — ${b}`,
   },
 
   // ---- 📜 /historico (paginated game history) ----
@@ -292,6 +330,9 @@ export const M = {
     personWin: (mine: number, theirs: number) => `✅ Vitória (${mine}–${theirs})`,
     personLoss: (mine: number, theirs: number) => `❌ Derrota (${mine}–${theirs})`,
     personDraw: (mine: number, theirs: number) => `🤝 Empate (${mine}–${theirs})`,
+    // golos: the game's top scorer (global view) / this player's own tally (per-person view)
+    scorer: (name: string) => `⚽ ${name}`,
+    personTally: (g: number, a: number) => [g > 0 ? `⚽${g}` : '', a > 0 ? `🅰️${a}` : ''].filter(Boolean).join(' '),
     // ◀️/▶️ pagination
     pageIndicator: (cur: number, total: number) => `Pág. ${cur}/${total}`,
     prev: '◀️',

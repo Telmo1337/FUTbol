@@ -53,6 +53,7 @@ export const COMMANDS: Command[] = [
     options: [{ type: USER, name: 'jogador', description: 'Ver o cartão deste jogador (público)', required: false }],
   },
   { name: 'eu', description: 'As tuas estatísticas (só tu vês)' },
+  { name: 'topmarcadores', description: 'Os melhores marcadores e assistentes do grupo' },
   {
     name: 'comparar',
     description: 'Comparar dois jogadores lado a lado',
