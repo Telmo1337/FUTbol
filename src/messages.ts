@@ -13,19 +13,31 @@ export const M = {
     'carregar nos botões para votar e confirmar presença — tudo aqui no canal.\n\n' +
     'Escreve `/ajuda` para veres os comandos.',
 
+  // Player help — only the commands a normal player uses.
   help:
     '📋 **Comandos**\n\n' +
-    '`/novojogo` — abrir uma votação de dia *(só admin)*\n' +
     '`/jogo` — ver o jogo atual\n' +
-    '`/fecharvotacao` — fechar já a votação *(só admin)*\n' +
-    '`/cancelar` — cancelar o jogo atual *(só admin)*\n' +
-    '`/equipas` — montar/editar as equipas do jogo *(só admin)* ⚔️\n' +
-    '`/resultado` — registar o placar do último jogo *(só admin)* 📊\n' +
     '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
     '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
     '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem',
+
+  // Admin help — everything (only shown when an admin runs /ajuda).
+  helpAdmin:
+    '📋 **Comandos**\n\n' +
+    '`/jogo` — ver o jogo atual\n' +
+    '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
+    '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
+    '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
+    '`/meuid` — ver o teu ID de Discord\n' +
+    '`/ajuda` — esta mensagem\n\n' +
+    '**Admin** 🔒\n' +
+    '`/novojogo` — abrir uma votação de dia\n' +
+    '`/fecharvotacao` — fechar já a votação\n' +
+    '`/cancelar` — cancelar o jogo atual\n' +
+    '`/equipas` — montar/editar as equipas do jogo ⚔️\n' +
+    '`/resultado` — registar o placar do último jogo 📊',
 
   whoami: (id: string) =>
     `O teu ID de Discord é \`${id}\`.\n\n` +

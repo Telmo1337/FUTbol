@@ -132,7 +132,7 @@ async function onCommand(
 ): Promise<Response> {
   switch (i.data?.name) {
     case 'ajuda':
-      return ephemeral(M.help);
+      return ephemeral(isAdmin(env, player?.tgUserId) ? M.helpAdmin : M.help);
 
     case 'meuid':
       return ephemeral(M.whoami(player?.tgUserId ?? '?'));
