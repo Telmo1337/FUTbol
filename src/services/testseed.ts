@@ -21,7 +21,7 @@ export async function seedTestGame(
   // Wipe any previous test games in this channel first (keeps it tidy + stats sane).
   await repo.deleteGamesByCreator(chatId, TEST_CREATOR);
 
-  const kickoffAt = now + 2 * HOUR;
+  const kickoffAt = now - HOUR; // "just played" → lands in the current month for /stats
   const gameId = await repo.createGame({
     chatId,
     createdBy: TEST_CREATOR,
@@ -34,14 +34,18 @@ export async function seedTestGame(
   await repo.addSlots(gameId, [{ kickoffAt, label: '🧪 teste', sortOrder: 0 }]);
   const slot = (await repo.getSlots(gameId))[0];
 
-  for (let i = 1; i <= TEST_PLAYERS; i++) {
-    const id = `90000000000000000${i}`; // fake snowflake-ish ids (digits only)
-    await repo.upsertPlayer({ tgUserId: id, displayName: `Tester ${i}`, username: null }, false, now);
-    await repo.setRsvp(gameId, id, 'IN', now + i); // staggered rank_at → stable order
-  }
+  // Confirm + check in all fake players in parallel (keeps well under Discord's 3s window).
+  await Promise.all(
+    Array.from({ length: TEST_PLAYERS }, (_, k) => k + 1).map(async (i) => {
+      const id = `90000000000000000${i}`; // fake snowflake-ish ids (digits only)
+      await repo.upsertPlayer({ tgUserId: id, displayName: `Tester ${i}`, username: null }, false, now);
+      await repo.setRsvp(gameId, id, 'IN', now + i); // staggered rank_at → stable order
+      await repo.addCheckin(gameId, id, 'admin', now); // present → counts, not a ghost
+    }),
+  );
 
   await repo.lockWinner(gameId, slot.id, kickoffAt - RSVP_CLOSE_BEFORE_KICKOFF_MS, now);
-  await repo.setStatus(gameId, 'LOCKED', now);
+  await repo.setStatus(gameId, 'PLAYED', now); // jump straight to PLAYED so /stats counts it
   const game = await repo.getGame(gameId);
   if (game) await postTeamsPlaceholder(api, repo, game, now);
   return TEST_PLAYERS;

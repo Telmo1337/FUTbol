@@ -304,12 +304,15 @@ export function createRepo(d1: D1Database) {
         .where(and(eq(games.chatId, chatId), eq(games.createdBy, createdBy)));
       const ids = rows.map((r) => r.id);
       if (ids.length === 0) return 0;
-      await db.delete(votes).where(inArray(votes.gameId, ids)).run();
-      await db.delete(rsvps).where(inArray(rsvps.gameId, ids)).run();
-      await db.delete(checkins).where(inArray(checkins.gameId, ids)).run();
-      await db.delete(resultTeams).where(inArray(resultTeams.gameId, ids)).run();
-      await db.delete(results).where(inArray(results.gameId, ids)).run();
-      await db.delete(candidateSlots).where(inArray(candidateSlots.gameId, ids)).run();
+      // Child tables have no FK to each other → safe to delete in parallel; games last.
+      await Promise.all([
+        db.delete(votes).where(inArray(votes.gameId, ids)).run(),
+        db.delete(rsvps).where(inArray(rsvps.gameId, ids)).run(),
+        db.delete(checkins).where(inArray(checkins.gameId, ids)).run(),
+        db.delete(resultTeams).where(inArray(resultTeams.gameId, ids)).run(),
+        db.delete(results).where(inArray(results.gameId, ids)).run(),
+        db.delete(candidateSlots).where(inArray(candidateSlots.gameId, ids)).run(),
+      ]);
       await db.delete(games).where(inArray(games.id, ids)).run();
       return ids.length;
     },
