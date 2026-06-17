@@ -13,18 +13,27 @@ interface Command {
   name: string;
   description: string;
   options?: CommandOption[];
+  // Discord permission bitfield (decimal string) needed to SEE/use the command.
+  // '0' = hidden from everyone except guild admins/owner → admin commands vanish from the
+  // "/" picker for regular players. (The bot still enforces its own ADMIN_IDS check too.)
+  default_member_permissions?: string;
 }
 
 const USER = 6;
+const ADMIN_ONLY = '0'; // see Command.default_member_permissions above
 
 export const COMMANDS: Command[] = [
-  { name: 'novojogo', description: 'Abrir uma votação de dia (só admin)' },
+  { name: 'novojogo', description: 'Abrir uma votação de dia (só admin)', default_member_permissions: ADMIN_ONLY },
   { name: 'jogo', description: 'Ver / repor o jogo atual no canal' },
-  { name: 'fecharvotacao', description: 'Fechar já a votação (só admin)' },
-  { name: 'cancelar', description: 'Cancelar o jogo atual (só admin)' },
-  { name: 'equipas', description: 'Montar / editar as equipas do jogo (só admin)' },
-  { name: 'resultado', description: 'Registar o placar do último jogo (só admin)' },
-  { name: 'testjogo', description: 'Criar um jogo de teste com jogadores falsos (só canal de teste)' },
+  { name: 'fecharvotacao', description: 'Fechar já a votação (só admin)', default_member_permissions: ADMIN_ONLY },
+  { name: 'cancelar', description: 'Cancelar o jogo atual (só admin)', default_member_permissions: ADMIN_ONLY },
+  { name: 'equipas', description: 'Montar / editar as equipas do jogo (só admin)', default_member_permissions: ADMIN_ONLY },
+  { name: 'resultado', description: 'Registar o placar do último jogo (só admin)', default_member_permissions: ADMIN_ONLY },
+  {
+    name: 'testjogo',
+    description: 'Criar um jogo de teste com jogadores falsos (só canal de teste)',
+    default_member_permissions: ADMIN_ONLY,
+  },
   {
     name: 'stats',
     description: 'Rankings do grupo, ou o cartão de um jogador',
