@@ -33,11 +33,14 @@ import {
 } from '../src/core/stats';
 import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../src/services/teams';
 import { loadCaptureState } from '../src/services/capture';
+import { loadPaymentState, setPaidSet } from '../src/services/payments';
+import { renderPaymentBoard } from '../src/render/payment-message';
+import { parsePriceField } from '../src/discord/payments';
 import { renderCapturePanel } from '../src/render/capture-message';
 import { seedTestGame } from '../src/services/testseed';
 import { loadHistory } from '../src/services/history';
 import { renderComparison, renderPersonalCard, renderStats, renderTopScorers } from '../src/render/stats-message';
-import { assistsEnabled, golosEnabled } from '../src/util';
+import { assistsEnabled, golosEnabled, pagamentosEnabled, formatEuros } from '../src/util';
 import { renderHistory } from '../src/render/history-message';
 import { capturePanelComponents, historyComponents, parseCb } from '../src/discord/components';
 
@@ -284,6 +287,22 @@ check('stats: golos counted (user 3 = 2, top scorer)', statFor(sG, '3', 'u3').go
 check('stats: assists counted (user 2 = 1, top assister)', statFor(sG, '2', 'u2').assists === 1 && topByAssists(sG, 5)[0]?.tgUserId === '2');
 check('render: ⚽ Goleadores + 🅰️ Assistências boards present', renderStats(sG, sG, 'junho', null).includes('Goleadores') && renderStats(sG, sG, 'junho', null).includes('Assistências'));
 check('render: /topmarcadores shows just the two boards', renderTopScorers(sG).includes('Goleadores') && renderTopScorers(sG).includes('Assistências'));
+
+// --- 💶 pagamentos e2e on the played game (confirmed squad = users 2,3,4) ---
+check('pay flag: default on, explicit off values off', pagamentosEnabled({}) === true && !pagamentosEnabled({ PAGAMENTOS_ENABLED: 'false' }) && !pagamentosEnabled({ PAGAMENTOS_ENABLED: 'off' }));
+check('formatEuros: cents → pt-PT euros', formatEuros(500) === '5,00€' && formatEuros(550) === '5,50€' && formatEuros(1234) === '12,34€');
+check('parsePriceField: accepts 5 / 5,50 / 3.5', (parsePriceField('5') as { cents: number }).cents === 500 && (parsePriceField('5,50') as { cents: number }).cents === 550 && (parsePriceField('3.5') as { cents: number }).cents === 350);
+check('parsePriceField: rejects junk, negatives, zero', 'error' in parsePriceField('abc') && 'error' in parsePriceField('-1') && 'error' in parsePriceField('0'));
+await repo.setGamePrice(game.id, 500, NOW);
+await setPaidSet(repo, (await repo.getGame(game.id))!, ['2', '4', '999'], NOW); // 999 not in squad → filtered out
+const payState = await loadPaymentState(repo, (await repo.getGame(game.id))!);
+check('pay: payers = confirmed squad (3 players)', payState.players.length === 3);
+check('pay: price stored (500c)', payState.priceCents === 500);
+check('pay: only squad members marked paid (2 & 4, not 3/999)', payState.paid.has('2') && payState.paid.has('4') && !payState.paid.has('3') && !payState.paid.has('999') && payState.paid.size === 2);
+const payBoard = renderPaymentBoard(payState);
+check('pay board: shows price, collected/expected + owe section', payBoard.includes('5,00€') && payBoard.includes('10,00€') && payBoard.includes('15,00€') && payBoard.includes('Em falta'));
+await setPaidSet(repo, (await repo.getGame(game.id))!, [], NOW); // untick everyone
+check('pay: clearing the selection marks nobody paid', (await loadPaymentState(repo, (await repo.getGame(game.id))!)).paid.size === 0);
 
 // --- GOLOS_ENABLED feature flag: default on; "false"/"0"/"off"/"no" turn it off ---
 check('flag: default (unset) is ON', golosEnabled({}) === true && golosEnabled({ GOLOS_ENABLED: 'true' }) === true);

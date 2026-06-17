@@ -51,3 +51,18 @@ export function assistsEnabled(env: { ASSISTS_ENABLED?: string }): boolean {
   const v = (env.ASSISTS_ENABLED ?? '').trim().toLowerCase();
   return v !== 'false' && v !== '0' && v !== 'off' && v !== 'no';
 }
+
+/**
+ * Master switch for the 💶 pagamentos feature (the /pagamentos board + admin panel). ON by
+ * default; set PAGAMENTOS_ENABLED to "false"/"0"/"off"/"no" to hide it without a code change.
+ * Same shape as golosEnabled — flip the env var to enable in prod once you've tested it.
+ */
+export function pagamentosEnabled(env: { PAGAMENTOS_ENABLED?: string }): boolean {
+  const v = (env.PAGAMENTOS_ENABLED ?? '').trim().toLowerCase();
+  return v !== 'false' && v !== '0' && v !== 'off' && v !== 'no';
+}
+
+/** Format a cent amount as a pt-PT euro string, e.g. 550 → "5,50€". */
+export function formatEuros(cents: number): string {
+  return `${(cents / 100).toFixed(2).replace('.', ',')}€`;
+}

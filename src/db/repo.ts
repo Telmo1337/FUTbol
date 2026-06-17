@@ -1,7 +1,7 @@
 // Repository: the ONLY module that runs SQL. Everything else calls these methods.
 import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { createDb } from './client';
-import { players, games, candidateSlots, votes, rsvps, checkins, resultTeams, results, gameEvents } from './schema';
+import { players, games, candidateSlots, votes, rsvps, checkins, resultTeams, results, gameEvents, payments } from './schema';
 import { GAME_STATUSES_ACTIVE } from '../config';
 import type { Checkin, CheckinSource, EventKind, Game, GameStatus, ResultSide, RsvpStatus, RsvpView, Slot, Vote } from '../types';
 
@@ -83,6 +83,17 @@ export function createRepo(d1: D1Database) {
         .select()
         .from(games)
         .where(and(eq(games.chatId, chatId), inArray(games.status, ACTIVE)))
+        .orderBy(desc(games.id))
+        .get();
+      return row ?? null;
+    },
+
+    /** Most recent game in a chat whose squad is frozen (LOCKED onward) — for 💶 /pagamentos. */
+    async getLatestSquadGame(chatId: string): Promise<Game | null> {
+      const row = await db
+        .select()
+        .from(games)
+        .where(and(eq(games.chatId, chatId), inArray(games.status, ['LOCKED', 'CHECKIN_OPEN', 'PLAYED'] as GameStatus[])))
         .orderBy(desc(games.id))
         .get();
       return row ?? null;
@@ -265,6 +276,29 @@ export function createRepo(d1: D1Database) {
       await db.update(games).set({ teamsLockedAt: now, updatedAt: now }).where(eq(games.id, id)).run();
     },
 
+    // ---------- 💶 payments ----------
+    async setGamePrice(id: number, cents: number, now: number): Promise<void> {
+      await db.update(games).set({ pricePerPersonCents: cents, updatedAt: now }).where(eq(games.id, id)).run();
+    },
+
+    async setPaymentMsg(id: number, msgId: string, now: number): Promise<void> {
+      await db.update(games).set({ paymentMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
+    },
+
+    /** The tgUserIds marked as paid for a game (presence = paid). */
+    async getPayments(gameId: number): Promise<string[]> {
+      const rows = await db.select({ tgUserId: payments.tgUserId }).from(payments).where(eq(payments.gameId, gameId));
+      return rows.map((r) => r.tgUserId);
+    },
+
+    /** Overwrite the whole paid-set for a game (delete + insert). Empty `ids` = nobody paid. */
+    async replacePayments(gameId: number, ids: string[], now: number): Promise<void> {
+      await db.delete(payments).where(eq(payments.gameId, gameId)).run();
+      if (ids.length > 0) {
+        await db.insert(payments).values(ids.map((tgUserId) => ({ gameId, tgUserId, paidAt: now }))).run();
+      }
+    },
+
     async getResultTeams(gameId: number): Promise<{ tgUserId: string; side: ResultSide }[]> {
       return db
         .select({ tgUserId: resultTeams.tgUserId, side: resultTeams.side })
@@ -345,6 +379,7 @@ export function createRepo(d1: D1Database) {
         db.delete(resultTeams).where(inArray(resultTeams.gameId, ids)).run(),
         db.delete(results).where(inArray(results.gameId, ids)).run(),
         db.delete(gameEvents).where(inArray(gameEvents.gameId, ids)).run(),
+        db.delete(payments).where(inArray(payments.gameId, ids)).run(),
         db.delete(candidateSlots).where(inArray(candidateSlots.gameId, ids)).run(),
       ]);
       await db.delete(games).where(inArray(games.id, ids)).run();

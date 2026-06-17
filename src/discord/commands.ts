@@ -32,6 +32,7 @@ export const COMMANDS: Command[] = [
   { name: 'cancelar', description: 'Cancelar o jogo atual (só admin)', default_member_permissions: ADMIN_ONLY },
   { name: 'equipas', description: 'Montar / editar as equipas do jogo (só admin)', default_member_permissions: ADMIN_ONLY },
   { name: 'resultado', description: 'Registar o placar do último jogo (só admin)', default_member_permissions: ADMIN_ONLY },
+  { name: 'pagamentos', description: 'Gerir quem já pagou o jogo (só admin)', default_member_permissions: ADMIN_ONLY },
   {
     name: 'testjogo',
     description: 'Criar jogo(s) de teste com jogadores falsos (só canal de teste)',

@@ -12,6 +12,9 @@ TZ = "Europe/Lisbon"
 GOLOS_ENABLED = "true"
 # Sub-switch for 🅰️ assistências only: "false" keeps goals but drops assists (subjective call).
 ASSISTS_ENABLED = "false"
+# 💶 Pagamentos: track who paid each game (the /pagamentos board + admin panel).
+# Off in prod until you've tested it — flip to "true" when ready (no code change needed).
+PAGAMENTOS_ENABLED = "false"
 # Runtime values are set with `wrangler secret put` (kept out of this public repo):
 #   DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, ADMIN_IDS, GAME_CHANNEL_ID
 # GAME_CHANNEL_ID = the channel where the Sunday auto-game is posted; unset = feature off.

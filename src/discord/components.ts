@@ -19,6 +19,10 @@ export type ParsedCb =
   | { kind: 'captureAdd'; gameId: number; event: EventKind } // admin picks a scorer/assister (+1)
   | { kind: 'captureUndo'; gameId: number; event: EventKind } // admin taps "anular último"
   | { kind: 'captureDone'; gameId: number } // admin closes the panel into a read-only summary
+  | { kind: 'paymentManage'; gameId: number } // admin opens the 💶 pagamentos panel from the public board
+  | { kind: 'paymentToggle'; gameId: number } // admin's "who paid" multi-select submit
+  | { kind: 'paymentPriceOpen'; gameId: number } // admin opens the 💶 price modal
+  | { kind: 'paymentDone'; gameId: number } // admin closes the pagamentos panel
   | { kind: 'historyPage'; page: number; tgUserId: string | null }; // ◀️/▶️ in /historico
 
 const RSVP_CODE: Record<string, RsvpStatus | undefined> = { I: 'IN', O: 'OUT', M: 'MAYBE' };
@@ -70,6 +74,10 @@ export function parseCb(data: string): ParsedCb | null {
   if ((p[0] === 'gguG' || p[0] === 'gguA') && p.length === 2)
     return { kind: 'captureUndo', gameId, event: p[0] === 'gguG' ? 'G' : 'A' };
   if (p[0] === 'ggdone' && p.length === 2) return { kind: 'captureDone', gameId };
+  if (p[0] === 'pgmanage' && p.length === 2) return { kind: 'paymentManage', gameId };
+  if (p[0] === 'pgtog' && p.length === 2) return { kind: 'paymentToggle', gameId };
+  if (p[0] === 'pgprice' && p.length === 2) return { kind: 'paymentPriceOpen', gameId };
+  if (p[0] === 'pgdone' && p.length === 2) return { kind: 'paymentDone', gameId };
   return null;
 }
 
@@ -254,6 +262,49 @@ export function capturePanelComponents(gameId: number, players: TeamMember[], as
 /** The admin-only "⚽ Golos & assists" button on the public result card (reopen the panel). */
 export function captureBoardComponents(gameId: number): ActionRow[] {
   return [{ type: 1, components: [button(M.teams.captureButton, `ggopen:${gameId}`, STYLE.primary)] }];
+}
+
+// ---- 💶 pagamentos components ----
+/** The admin-only "💶 Gerir pagamentos" button on the public payment board (opens the panel). */
+export function paymentBoardComponents(gameId: number): ActionRow[] {
+  return [{ type: 1, components: [button(M.pay.manageButton, `pgmanage:${gameId}`, STYLE.primary)] }];
+}
+
+/**
+ * The admin's private (ephemeral) payment panel: a "who paid" multi-select (re-picking the whole
+ * set each time, like the team selects) + the 💶 price and ✅ done buttons.
+ */
+export function paymentPanelComponents(gameId: number, players: TeamMember[], paid: Set<string>): (SelectRow | ActionRow)[] {
+  const rows: (SelectRow | ActionRow)[] = [];
+  // A string select must carry 1–25 options — omit it entirely if the squad is somehow empty.
+  if (players.length > 0) {
+    const options: SelectOption[] = players.slice(0, 25).map((m) => ({
+      label: m.displayName.slice(0, 100),
+      value: m.tgUserId,
+      default: paid.has(m.tgUserId),
+    }));
+    rows.push({
+      type: 1,
+      components: [
+        {
+          type: 3,
+          custom_id: `pgtog:${gameId}`,
+          placeholder: M.pay.selectPlaceholder,
+          min_values: 0,
+          max_values: Math.max(1, options.length),
+          options,
+        },
+      ],
+    });
+  }
+  rows.push({
+    type: 1,
+    components: [
+      button(M.pay.priceButton, `pgprice:${gameId}`, STYLE.secondary),
+      button(M.pay.doneButton, `pgdone:${gameId}`, STYLE.success),
+    ],
+  });
+  return rows;
 }
 
 // ---- 📜 history pagination ----
