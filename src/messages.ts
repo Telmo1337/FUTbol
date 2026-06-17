@@ -17,11 +17,11 @@ export const M = {
   help:
     '📋 **Comandos**\n\n' +
     '`/jogo` — ver o jogo atual\n' +
-    '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
-    '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
-    '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
-    '`/topmarcadores` — melhores marcadores e assistentes ⚽\n' +
-    '`/historico` — histórico de jogos (todos ou de um jogador) 📜\n' +
+    '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém\n' +
+    '`/eu` — as tuas estatísticas *(só tu vês)*\n' +
+    '`/comparar` — comparar dois jogadores lado a lado\n' +
+    '`/topmarcadores` — melhores marcadores e assistentes\n' +
+    '`/historico` — histórico de jogos (todos ou de um jogador)\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem',
 
@@ -29,19 +29,19 @@ export const M = {
   helpAdmin:
     '📋 **Comandos**\n\n' +
     '`/jogo` — ver o jogo atual\n' +
-    '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
-    '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
-    '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
-    '`/topmarcadores` — melhores marcadores e assistentes ⚽\n' +
-    '`/historico` — histórico de jogos (todos ou de um jogador) 📜\n' +
+    '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém\n' +
+    '`/eu` — as tuas estatísticas *(só tu vês)*\n' +
+    '`/comparar` — comparar dois jogadores lado a lado\n' +
+    '`/topmarcadores` — melhores marcadores e assistentes\n' +
+    '`/historico` — histórico de jogos (todos ou de um jogador)\n' +
     '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem\n\n' +
     '**Admin** 🔒\n' +
     '`/novojogo` — abrir uma votação de dia\n' +
     '`/fecharvotacao` — fechar já a votação\n' +
     '`/cancelar` — cancelar o jogo atual\n' +
-    '`/equipas` — montar/editar as equipas do jogo ⚔️\n' +
-    '`/resultado` — registar o placar do último jogo 📊',
+    '`/equipas` — montar/editar as equipas do jogo\n' +
+    '`/resultado` — registar o placar do último jogo',
 
   whoami: (id: string) =>
     `O teu ID de Discord é \`${id}\`.\n\n` +
@@ -71,19 +71,19 @@ export const M = {
   noActiveGame: 'Não há nenhum jogo ativo. Abre um com `/novojogo`.',
   noTeamGame: 'Não há nenhum jogo com equipas. Fecha as inscrições de um jogo primeiro.',
 
-  tieAdminPrompt: '🤝 **Empate na votação!** Admin, escolhe o horário 👇',
+  tieAdminPrompt: '🤝 **Empate na votação!** Admin, escolhe o horário.',
 
   promoted: (who: string, when: string, loc: string) =>
-    `🎉 ${who}, abriu uma vaga — **estás dentro** para ${when}! 📍 ${esc(loc)}`,
+    `${who}, abriu uma vaga — **estás dentro** para ${when}! 📍 ${esc(loc)}`,
 
   gameOn: (n: number, when: string, loc: string) =>
-    `🎉 **Temos jogo!** ${n} confirmados para **${when}**. 📍 ${esc(loc)}`,
+    `**Temos jogo!** ${n} confirmados para **${when}**. 📍 ${esc(loc)}`,
 
   shortWarn: (missing: number, inCount: number, min: number, when: string) =>
-    `⚠️ Faltam **${missing}** para ${when} (${inCount}/${min}). Confirmem presença 👆`,
+    `⚠️ Faltam **${missing}** para ${when} (${inCount}/${min}). Confirmem presença.`,
 
   nonRespPing: (mentions: string, when: string) =>
-    `👋 Ainda não responderam: ${mentions}. Vão jogar **${when}**? Carreguem no botão 👆`,
+    `Ainda não responderam: ${mentions}. Vão jogar **${when}**? Carreguem no botão.`,
 
   rsvpClosedFinal: (when: string, loc: string, names: string) =>
     `🔒 **Inscrições fechadas — ${when}**\n📍 ${esc(loc)}\n\n**Equipa final:**\n${names}`,
@@ -102,7 +102,7 @@ export const M = {
     votesCount: (n: number) => `${n} ${n === 1 ? 'voto' : 'votos'}`,
     resultTitle: '✅ **Jogo marcado!**',
     tieTitle: '🗳️ **Votação encerrada — empate!**',
-    tieFooter: 'O admin vai escolher o horário 👇',
+    tieFooter: 'O admin vai escolher o horário.',
   },
 
   // ---- RSVP live-message fragments ----
@@ -110,7 +110,7 @@ export const M = {
     markedTitle: (when: string) => `✅ **Jogo marcado — ${when}**`,
     lockedTitle: (when: string) => `🔒 **Jogo confirmado — ${when}**`,
     cancelledTitle: (when: string) => `❌ **Jogo cancelado — ${when}**`,
-    prompt: 'Vais? Carrega num botão 👇',
+    prompt: 'Vais? Carrega num botão.',
     confirmed: (n: number, cap: number) => `🟢 **Confirmados (${n}/${cap})**`,
     waitlist: (n: number) => `📋 **Lista de espera (${n})**`,
     maybe: (n: number) => `🤔 **Talvez (${n})**`,
@@ -118,7 +118,7 @@ export const M = {
     empty: '— ainda ninguém —',
     needMore: (missing: number, inCount: number, min: number) =>
       `⚠️ Faltam **${missing}** para confirmar o jogo (${inCount}/${min}).`,
-    confirmedLine: (inCount: number, min: number) => `🎉 Jogo confirmado! (${inCount}/${min})`,
+    confirmedLine: (inCount: number, min: number) => `Jogo confirmado! (${inCount}/${min})`,
     closesAt: (when: string) => `⏳ Inscrições fecham ${when}`,
     buttons: { in: '✅ Vou', out: '❌ Não vou', maybe: '🤔 Talvez' },
   },
@@ -148,7 +148,7 @@ export const M = {
   // ---- Check-in board (kickoff → +window): "Cheguei ✅" ----
   checkin: {
     title: (when: string) => `🟢 **Hora do jogo — ${when}**`,
-    ping: (mentions: string) => `📣 ${mentions}\nChegaram ao campo? Carreguem em **Cheguei** 👇`,
+    ping: (mentions: string) => `${mentions}\nChegaram ao campo? Carreguem em **Cheguei**.`,
     button: '✅ Cheguei',
     present: (n: number) => `✅ **Já cá estão (${n})**`,
     pending: (n: number) => `⏳ **Ainda por confirmar (${n})**`,
@@ -161,8 +161,8 @@ export const M = {
     title: (when: string) => `🏁 **Resumo — ${when}**`,
     played: (n: number) => `👟 **Jogaram (${n})**`,
     ghosts: (n: number) => `👻 **Fantasmas (${n})**`,
-    noGhosts: '👏 Zero fantasmas esta semana — toda a gente apareceu!',
-    clearHint: '*Admin: alguém jogou mas esqueceu-se de carregar? Toca no nome para corrigir 👇*',
+    noGhosts: 'Zero fantasmas esta semana — toda a gente apareceu!',
+    clearHint: '*Admin: alguém jogou mas esqueceu-se de carregar? Toca no nome para corrigir.*',
     footer: '📊 Ranking completo em `/stats`',
     ghostButton: (name: string) => `✅ ${name} jogou`,
     empty: '— ninguém —',
@@ -172,7 +172,7 @@ export const M = {
   teams: {
     // Public placeholder, auto-posted when the squad is confirmed. Flips to the board below.
     placeholderTitle: '⚔️ **Equipas a caminho**',
-    placeholderBody: 'O admin vai montar as equipas para este jogo 👇',
+    placeholderBody: 'O admin vai montar as equipas para este jogo.',
     placeholderButton: '⚙️ Montar equipas (admin)',
     // The private (ephemeral) panel only the admin sees while choosing.
     panelTitle: '⚙️ **Montar equipas** *(só tu vês isto)*',
@@ -186,7 +186,7 @@ export const M = {
     beta: (n: number) => `🅱️ **Beta (${n})**`,
     out: (n: number) => `🪑 **De fora (${n})**`,
     empty: '— ninguém —',
-    publishedHint: '*Admin: edita as equipas ou mete o resultado quando o jogo acabar 👇*',
+    publishedHint: '*Admin: edita as equipas ou mete o resultado quando o jogo acabar.*',
     editButton: '✏️ Editar equipas',
     resultButton: '📊 Inserir resultado',
     captureButton: '⚽ Golos & assists',
@@ -199,8 +199,8 @@ export const M = {
     fieldBeta: 'Golos da Equipa Beta',
     cardTitle: (day: string) => (day ? `📊 **Resultado — ${day}**` : '📊 **Resultado**'),
     score: (ga: number, gb: number) => `🅰️ **Alpha  ${ga} – ${gb}  Beta** 🅱️`,
-    winAlpha: '🏆 Vitória da **Alpha**!',
-    winBeta: '🏆 Vitória da **Beta**!',
+    winAlpha: 'Vitória da **Alpha**!',
+    winBeta: 'Vitória da **Beta**!',
     draw: '🤝 **Empate**',
     footer: '📊 Já conta para as estatísticas — `/stats`',
   },
@@ -211,7 +211,7 @@ export const M = {
     score: (ga: number, gb: number) => `🅰️ ${ga}–${gb} 🅱️`,
     tally: (assigned: number, total: number) => `golos atribuídos: ${assigned}/${total}`,
     hint: '*Escolhe quem marcou/assistiu — cada escolha soma +1. Enganaste-te? "Anular" tira o último.*',
-    empty: '*Ainda sem golos nem assistências. Escolhe o marcador no menu 👇*',
+    empty: '*Ainda sem golos nem assistências. Escolhe o marcador no menu.*',
     // one line per player with at least one event: "• Tester 1  ⚽×2  🅰️×1"
     playerLine: (name: string, goals: number, assists: number) =>
       `• ${name}${goals > 0 ? `  ⚽×${goals}` : ''}${assists > 0 ? `  🅰️×${assists}` : ''}`,
@@ -229,32 +229,32 @@ export const M = {
   test: {
     disabled: '🔒 O `/testjogo` está desativado. Define `TEST_CHANNEL_ID` para o ativar.',
     wrongChannel: '🔒 O `/testjogo` só corre no canal de testes.',
-    created: (n: number) => `🧪 Jogo de teste criado com ${n} jogadores confirmados. As equipas estão no canal 👇`,
-    createdMany: (n: number) => `🧪 ${n} jogos de teste criados (com equipas e resultado). Folheia com \`/historico\` 📜`,
+    created: (n: number) => `🧪 Jogo de teste criado com ${n} jogadores confirmados. As equipas estão no canal.`,
+    createdMany: (n: number) => `🧪 ${n} jogos de teste criados (com equipas e resultado). Folheia com \`/historico\`.`,
   },
 
   // ---- /stats group leaderboard ----
   stats: {
     title: '📊 **Estatísticas FUTbol**',
     since: (when: string) => `*desde ${when}*`,
-    totalGames: (n: number) => `⚽ ${n} ${n === 1 ? 'jogo jogado' : 'jogos jogados'}`,
-    none: 'Ainda não há jogos jogados. As estatísticas aparecem depois do primeiro jogo. ⚽',
+    totalGames: (n: number) => `${n} ${n === 1 ? 'jogo jogado' : 'jogos jogados'}`,
+    none: 'Ainda não há jogos jogados. As estatísticas aparecem depois do primeiro jogo.',
     reliableTitle: `🏅 **Mais fiáveis** *(mín. ${MIN_GAMES_TO_RANK} jogos)*`,
     reliableLine: (pct: number, shown: number, total: number) => `${pct}% *(${shown}/${total})*`,
-    reliableEmpty: '*ainda ninguém com jogos suficientes — a aquecer 🔥*',
+    reliableEmpty: '*ainda ninguém com jogos suficientes — a aquecer*',
     appearancesTitle: '👟 **Mais presenças**',
     appearancesLine: (n: number) => `${n} ${n === 1 ? 'jogo' : 'jogos'}`,
     streakTitle: '🔥 **Em sequência**',
     streakLine: (n: number) => `${n} seguidos`,
     ghostsTitle: '👻 **Mais fantasma**',
     ghostsLine: (n: number) => `${n} ${n === 1 ? 'falta' : 'faltas'}`,
-    ghostsEmpty: '*sem fantasmas — que grupo de confiança! 👏*',
+    ghostsEmpty: '*sem fantasmas — grupo de confiança*',
     // ---- "Este mês" highlight ----
     monthTitle: (month: string) => `📅 **Este mês — ${month}**`,
-    monthNone: '*ainda sem jogos este mês — o primeiro já conta ⚽*',
+    monthNone: '*ainda sem jogos este mês — o primeiro já conta*',
     motmLine: (name: string, games: number, pct: number | null, streak: number) =>
-      `🏆 Jogador do Mês: **${name}** — ${games} ${games === 1 ? 'jogo' : 'jogos'}` +
-      `${pct != null ? ` · ${pct}%` : ''}${streak > 1 ? ` · 🔥${streak}` : ''}`,
+      `Jogador do Mês: **${name}** — ${games} ${games === 1 ? 'jogo' : 'jogos'}` +
+      `${pct != null ? ` · ${pct}%` : ''}${streak > 1 ? ` · ${streak} seguidos` : ''}`,
     monthAppearancesTitle: '👟 **Presenças do mês**',
     // ---- new all-time boards ----
     bestStreakTitle: '📈 **Maior sequência de sempre**',
@@ -277,7 +277,7 @@ export const M = {
     assistsLine: (n: number) => `${n} ${n === 1 ? 'assistência' : 'assistências'}`,
     // ---- /topmarcadores (só os dois quadros, à parte do /stats cheio) ----
     topTitle: '⚽ **Marcadores & Assistências**',
-    topNone: 'Ainda não há golos nem assistências registados. Aparecem aqui depois do primeiro jogo com marcadores. ⚽',
+    topNone: 'Ainda não há golos nem assistências registados. Aparecem aqui depois do primeiro jogo com marcadores.',
   },
 
   // ---- /eu personal card ----
@@ -286,7 +286,7 @@ export const M = {
     appearances: (n: number) => `👟 Presenças: **${n}**`,
     reliability: (pct: number, shown: number, total: number) => `🏅 Fiabilidade: **${pct}%** *(${shown}/${total})*`,
     reliabilityWarming: (missing: number) =>
-      `🏅 Fiabilidade: a aquecer 🔥 *(faltam ${missing} ${missing === 1 ? 'jogo' : 'jogos'} p/ entrar no ranking)*`,
+      `🏅 Fiabilidade: a aquecer *(faltam ${missing} ${missing === 1 ? 'jogo' : 'jogos'} p/ entrar no ranking)*`,
     streak: (cur: number, best: number) => `🔥 Sequência: **${cur}** *(melhor: ${best})*`,
     ghosts: (n: number) => `👻 Fantasma: **${n}** ${n === 1 ? 'vez' : 'vezes'}`,
     // ---- result lines ----
@@ -317,7 +317,7 @@ export const M = {
   history: {
     title: '📜 **Histórico**',
     titlePerson: (name: string) => `📜 **Histórico — ${name}**`,
-    none: 'Ainda não há jogos no histórico. Aparecem aqui depois do primeiro jogo. ⚽',
+    none: 'Ainda não há jogos no histórico. Aparecem aqui depois do primeiro jogo.',
     nonePerson: (name: string) => `${name} ainda não tem jogos no histórico.`,
     noResult: '*(sem resultado)*',
     // global line: a game's Alpha–Beta score + the winner badge
