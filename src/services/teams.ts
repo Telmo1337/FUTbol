@@ -7,7 +7,7 @@ import type { Game, ResultSide } from '../types';
 import { splitSquad } from '../core/rsvp';
 import { formatDay } from '../core/time';
 import { boardEmbed } from '../discord/embeds';
-import { teamsBoardComponents, teamsPlaceholderComponents, type TeamMember } from '../discord/components';
+import { captureBoardComponents, teamsBoardComponents, teamsPlaceholderComponents, type TeamMember } from '../discord/components';
 import { renderResultCard, renderTeamsBoard, renderTeamsPlaceholder, type TeamsView } from '../render/teams-message';
 
 /** Everything the panel/board needs: the confirmed squad (select options) + current sides. */
@@ -92,5 +92,6 @@ export async function recordResult(
   // Date the card from the winning slot's kickoff, so it's always clear which game this is.
   const slot = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
   const dayLabel = slot ? formatDay(slot.kickoffAt) : '';
-  await sendBoard(api, game.chatId, renderResultCard(state.view, goalsA, goalsB, dayLabel));
+  // The card carries an admin-only "⚽ Golos & assists" button to (re)open the capture panel.
+  await sendBoard(api, game.chatId, renderResultCard(state.view, goalsA, goalsB, dayLabel), captureBoardComponents(game.id));
 }

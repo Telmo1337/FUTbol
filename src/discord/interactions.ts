@@ -13,12 +13,13 @@ import type { Repo } from '../db/repo';
 import type { Sender } from './rest';
 import { M } from '../messages';
 import { parseAdminIds } from '../util';
-import { historyComponents, parseCb, teamsPanelComponents } from './components';
+import { capturePanelComponents, historyComponents, parseCb, teamsPanelComponents } from './components';
 import { boardEmbed } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
 import { resultModal, parseResultFields } from './teams';
 import * as games from '../services/games';
 import { applyTeamSelect, loadTeamsState, publishTeams, recordResult } from '../services/teams';
+import { loadCaptureState } from '../services/capture';
 import { seedTestGame } from '../services/testseed';
 import { loadStats, loadStatsInput } from '../services/stats';
 import { loadHistory, type HistoryView } from '../services/history';
@@ -27,6 +28,7 @@ import { formatMonth, monthWindow } from '../core/time';
 import { renderComparison, renderPersonalCard, renderStats, sinceLabel } from '../render/stats-message';
 import { renderHistory } from '../render/history-message';
 import { renderTeamsPanel } from '../render/teams-message';
+import { renderCapturePanel, renderCaptureSummary } from '../render/capture-message';
 import type { Game } from '../types';
 
 interface DiscordUser {
@@ -116,6 +118,16 @@ async function teamPanelData(repo: Repo, game: Game): Promise<object> {
   return {
     embeds: [boardEmbed(renderTeamsPanel(state.view))],
     components: teamsPanelComponents(game.id, state.squad, state.aIds, state.bIds),
+    flags: 64,
+  };
+}
+
+/** The admin's private (ephemeral) ⚽ capture panel: tallies embed + the two selects + undo/done. */
+async function capturePanelData(repo: Repo, game: Game): Promise<object> {
+  const state = await loadCaptureState(repo, game);
+  return {
+    embeds: [boardEmbed(renderCapturePanel(state))],
+    components: capturePanelComponents(game.id, state.players),
     flags: 64,
   };
 }
@@ -276,13 +288,17 @@ async function onComponent(
     return updateMsg(historyData(view));
   }
 
-  // Team-formation + result controls — all admin-only, all reply directly (panel / modal / update).
+  // Team-formation + result + ⚽ capture controls — all admin-only, all reply directly (panel / modal / update).
   if (
     parsed.kind === 'teamOpen' ||
     parsed.kind === 'teamEdit' ||
     parsed.kind === 'teamSelect' ||
     parsed.kind === 'teamLock' ||
-    parsed.kind === 'resultOpen'
+    parsed.kind === 'resultOpen' ||
+    parsed.kind === 'captureOpen' ||
+    parsed.kind === 'captureAdd' ||
+    parsed.kind === 'captureUndo' ||
+    parsed.kind === 'captureDone'
   ) {
     if (!isAdmin(env, player.tgUserId)) return ephemeral(M.cb.onlyAdmin);
     const game = await repo.getGame(parsed.gameId);
@@ -297,6 +313,23 @@ async function onComponent(
     if (parsed.kind === 'teamLock') {
       const ok = await publishTeams(sender, repo, game, now);
       return ok ? updateMsg({ content: M.cb.teamsPublished, embeds: [], components: [] }) : ephemeral(M.cb.teamsNeedBoth);
+    }
+    // ⚽ capture panel: open from the result card, +1 a scorer/assister, undo, or close to a summary.
+    if (parsed.kind === 'captureOpen') {
+      return reply({ type: 4, data: await capturePanelData(repo, game) });
+    }
+    if (parsed.kind === 'captureAdd') {
+      const picked = i.data?.values?.[0]; // the select only offers squad members
+      if (picked) await repo.addGoalEvent(game.id, picked, parsed.event, now);
+      return updateMsg(await capturePanelData(repo, game));
+    }
+    if (parsed.kind === 'captureUndo') {
+      await repo.undoLastGoalEvent(game.id, parsed.event);
+      return updateMsg(await capturePanelData(repo, game));
+    }
+    if (parsed.kind === 'captureDone') {
+      const state = await loadCaptureState(repo, game);
+      return updateMsg({ content: '', embeds: [boardEmbed(renderCaptureSummary(state))], components: [] });
     }
     // resultOpen: the score modal (game id rides in the modal custom_id)
     if (!game.teamsLockedAt) return ephemeral(M.cb.resultNoTeams);
@@ -351,7 +384,8 @@ async function onModal(
     // PLAYED (and posts the recap with ghost-fix buttons). No-op if it's already closed.
     if (game.status === 'CHECKIN_OPEN') await games.closeCheckin(sender, repo, game, now);
     await recordResult(sender, repo, game, parsedResult.goalsA, parsedResult.goalsB, player.tgUserId, now);
-    return ephemeral(M.cb.resultSaved);
+    // Straight into the ⚽ capture panel (ephemeral, admin-only) so golos/assists are filled now.
+    return reply({ type: 4, data: await capturePanelData(repo, game) });
   }
 
   if (customId !== 'novojogo') return ephemeral(M.cb.error);

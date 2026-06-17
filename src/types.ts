@@ -49,6 +49,9 @@ export type CheckinSource = 'self' | 'admin';
 /** Which team a player was on for a game's result. 'A' = Alpha, 'B' = Beta. */
 export type ResultSide = 'A' | 'B';
 
+/** An individual scoring event in a game. 'G' = golo (goal), 'A' = assistência (assist). */
+export type EventKind = 'G' | 'A';
+
 export interface Player {
   tgUserId: string; // Discord user id (snowflake)
   displayName: string;

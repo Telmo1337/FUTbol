@@ -69,6 +69,18 @@ async function seedOneGame(
     await repo.replaceTeams(gameId, teams);
     const [goalsA, goalsB] = TEST_SCORES[variant % TEST_SCORES.length];
     await repo.saveResult(gameId, goalsA, goalsB, TEST_CREATOR, now);
+
+    // v4: seed golos/assists so /stats + /historico have data. Goals match the score exactly
+    // (spread round-robin across each side, offset by variant so scorers differ per game); a
+    // sprinkle of assists for whichever side scored. Deterministic → tests are reproducible.
+    const alpha = teams.filter((t) => t.side === 'A').map((t) => t.tgUserId);
+    const beta = teams.filter((t) => t.side === 'B').map((t) => t.tgUserId);
+    const evs: Promise<void>[] = [];
+    if (alpha.length > 0) for (let k = 0; k < goalsA; k++) evs.push(repo.addGoalEvent(gameId, alpha[(k + variant) % alpha.length], 'G', now));
+    if (beta.length > 0) for (let k = 0; k < goalsB; k++) evs.push(repo.addGoalEvent(gameId, beta[(k + variant) % beta.length], 'G', now));
+    if (alpha.length > 0 && goalsA > 0) evs.push(repo.addGoalEvent(gameId, alpha[(variant + 1) % alpha.length], 'A', now));
+    if (beta.length > 0 && goalsB > 0) evs.push(repo.addGoalEvent(gameId, beta[(variant + 2) % beta.length], 'A', now));
+    await Promise.all(evs);
   }
 
   await repo.setStatus(gameId, 'PLAYED', now); // jump straight to PLAYED so /stats counts it

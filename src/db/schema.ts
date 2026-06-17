@@ -1,7 +1,7 @@
 // Drizzle table definitions — the single source of truth for typed queries.
 // Must stay in sync with migrations/0000_init.sql.
 import { sqliteTable, integer, text, primaryKey } from 'drizzle-orm/sqlite-core';
-import type { CheckinSource, GameStatus, ResultSide, RsvpStatus } from '../types';
+import type { CheckinSource, EventKind, GameStatus, ResultSide, RsvpStatus } from '../types';
 
 // NOTE: id-bearing columns (tg_user_id, chat_id, created_by, *_msg_id) are TEXT —
 // they hold Discord snowflakes, which overflow JS numbers if read as integers.
@@ -100,4 +100,14 @@ export const results = sqliteTable('results', {
   goalsB: integer('goals_b').notNull(),
   recordedBy: text('recorded_by').notNull(),
   recordedAt: integer('recorded_at').notNull(),
+});
+
+// v4: scoring events. One row = one goal ('G') or one assist ('A') by a player in a game.
+// Append-only with an autoincrement id, so "anular último" deletes the highest id of that kind.
+export const gameEvents = sqliteTable('game_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  gameId: integer('game_id').notNull(),
+  tgUserId: text('tg_user_id').notNull(),
+  kind: text('kind').$type<EventKind>().notNull(),
+  createdAt: integer('created_at').notNull(),
 });

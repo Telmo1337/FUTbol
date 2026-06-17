@@ -8,10 +8,12 @@ import {
   rankIn,
   reliabilityRawPct,
   topByAppearances,
+  topByAssists,
   topByBestStreak,
   topByBestWinStreak,
   topByEarlyBird,
   topByGhosts,
+  topByGoals,
   topByReliability,
   topByStreak,
   topByWinPct,
@@ -86,6 +88,14 @@ export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinc
   if (winStreak.length > 0)
     parts.push('', M.stats.winStreakTitle, ...board(winStreak, (p) => M.stats.winStreakLine(p.bestWinStreak)));
 
+  // ⚽ goleadores (skip until someone has a goal)
+  const goals = topByGoals(stats, LEADERBOARD_TOP_N);
+  if (goals.length > 0) parts.push('', M.stats.goalsTitle, ...board(goals, (p) => M.stats.goalsLine(p.goals)));
+
+  // 🅰️ assistências (skip until someone has an assist)
+  const assists = topByAssists(stats, LEADERBOARD_TOP_N);
+  if (assists.length > 0) parts.push('', M.stats.assistsTitle, ...board(assists, (p) => M.stats.assistsLine(p.assists)));
+
   // 👻 ghosts (always shown — fallback praises a clean week)
   parts.push('', M.stats.ghostsTitle);
   const gh = topByGhosts(stats, LEADERBOARD_TOP_N);
@@ -125,6 +135,9 @@ export function renderPersonalCard(p: PlayerStat, stats: Stats): string {
     if (p.winPct != null) parts.push(M.eu.winPct(p.winPct) + rankSuffix(topByWinPct(stats, n), p.tgUserId));
     parts.push(M.eu.winStreak(p.currentWinStreak, p.bestWinStreak) + rankSuffix(topByBestWinStreak(stats, n), p.tgUserId));
   }
+  // ⚽/🅰️ lines (only once this player has the respective events)
+  if (p.goals > 0) parts.push(M.eu.goals(p.goals) + rankSuffix(topByGoals(stats, n), p.tgUserId));
+  if (p.assists > 0) parts.push(M.eu.assists(p.assists) + rankSuffix(topByAssists(stats, n), p.tgUserId));
   parts.push(M.eu.ghosts(p.ghosts));
   return parts.join('\n');
 }
@@ -159,6 +172,12 @@ export function renderComparison(a: PlayerStat, b: PlayerStat): string {
 
   const [wsA, wsB] = lead(String(a.currentWinStreak), String(b.currentWinStreak), a.currentWinStreak, b.currentWinStreak);
   parts.push(M.comparar.winStreak(wsA, wsB, a.bestWinStreak, b.bestWinStreak));
+
+  const [gA, gB] = lead(String(a.goals), String(b.goals), a.goals, b.goals);
+  parts.push(M.comparar.goals(gA, gB));
+
+  const [asA, asB] = lead(String(a.assists), String(b.assists), a.assists, b.assists);
+  parts.push(M.comparar.assists(asA, asB));
 
   const [ghA, ghB] = lead(String(a.ghosts), String(b.ghosts), a.ghosts, b.ghosts, false);
   parts.push(M.comparar.ghosts(ghA, ghB));
