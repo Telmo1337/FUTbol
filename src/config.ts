@@ -22,6 +22,27 @@ export const MIN_GAMES_TO_RANK = 3;
 /** How many names to show per leaderboard section in /stats. */
 export const LEADERBOARD_TOP_N = 5;
 
+/** How many names to show in the compact "Este mês" mini-board. */
+export const MONTH_TOP_N = 3;
+
+/**
+ * 🏆 Jogador do Mês. A composite score over THIS MONTH's stats — appearances dominate,
+ * reliability fine-tunes, the month's best streak rewards consistency, ghosts hurt:
+ *   score = W_APP·presenças + W_STREAK·melhorSequência + (0..W_REL fiabilidade) − W_GHOST·fantasmas
+ * Weights are integers so the result is easy to explain to the group. Tune freely.
+ */
+export const MOTM_W_APPEARANCE = 10;
+export const MOTM_W_STREAK = 3;
+export const MOTM_W_RELIABILITY = 5; // max bonus, scaled by raw present-while-confirmed ratio
+export const MOTM_W_GHOST = 4;
+/** Don't crown anyone until the month has at least this many played games... */
+export const MIN_GAMES_FOR_MOTM = 2;
+/** ...and the winner must have shown up to at least this many of them. */
+export const MOTM_MIN_APPEARANCES = 2;
+
+/** 💯 Registo perfeito: 100% present-while-confirmed across at least this many confirmed games. */
+export const PERFECT_RECORD_MIN_GAMES = 5;
+
 /** If the admin gives no vote deadline, default to this long before the earliest slot. */
 export const VOTE_LEAD_BEFORE_EARLIEST_MS = 6 * HOUR;
 

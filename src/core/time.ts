@@ -37,6 +37,23 @@ export function formatWhen(ms: number): string {
   return `${cap(stripDot(p.weekday ?? ''))}, ${p.day} ${stripDot(p.month ?? '')} · ${p.hour}:${p.minute}`;
 }
 
+/** pt-PT month name for a moment, e.g. "junho" (lowercase, as Portuguese writes months). */
+export function formatMonth(ms: number): string {
+  return new Intl.DateTimeFormat(LOCALE, { timeZone: TIMEZONE, month: 'long' }).format(new Date(ms));
+}
+
+/**
+ * The [since, until) UTC window of the Lisbon calendar month that `now` falls in.
+ * `since` = 1st at 00:00 Lisbon; `until` = 1st of next month at 00:00 (December rolls the year).
+ * Used to filter stats to "this month". DST-safe via lisbonToUtc.
+ */
+export function monthWindow(now: number): { since: number; until: number } {
+  const { year, month } = lisbonParts(now);
+  const since = lisbonToUtc(year, month, 1, 0, 0);
+  const until = month === 12 ? lisbonToUtc(year + 1, 1, 1, 0, 0) : lisbonToUtc(year, month + 1, 1, 0, 0);
+  return { since, until };
+}
+
 const WEEKDAY_TO_ISO: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
 
 /**

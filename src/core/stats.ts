@@ -6,7 +6,17 @@
 //   🏅 reliability = present-while-confirmed ÷ confirmed-for  (ranked only at ≥ MIN_GAMES_TO_RANK)
 //   👻 ghost      = confirmed-for but NOT present
 //   🔥 streak     = consecutive most-recent PLAYED games you were present for (any miss resets)
-import { MIN_GAMES_TO_RANK } from '../config';
+//   🐦 early-bird = you were the FIRST to say "Vou" (lowest rankAt among the IN rows) for that game
+import {
+  MIN_GAMES_TO_RANK,
+  MIN_GAMES_FOR_MOTM,
+  MOTM_MIN_APPEARANCES,
+  MOTM_W_APPEARANCE,
+  MOTM_W_GHOST,
+  MOTM_W_RELIABILITY,
+  MOTM_W_STREAK,
+  PERFECT_RECORD_MIN_GAMES,
+} from '../config';
 import type { RsvpStatus } from '../types';
 
 export interface StatsGame {
@@ -36,6 +46,7 @@ export interface PlayerStat {
   reliabilityPct: number | null; // null until confirmedFor >= MIN_GAMES_TO_RANK
   currentStreak: number;
   bestStreak: number;
+  earlyBirdWins: number; // games where you were the first to say "Vou"
 }
 export interface Stats {
   totalGames: number;
@@ -54,8 +65,15 @@ function confirmedSquad(rows: StatsRsvp[], cap: number): string[] {
     .map((r) => r.tgUserId);
 }
 
-export function computeStats(input: StatsInput): Stats {
-  const games = [...input.games].sort((a, b) => a.kickoffAt - b.kickoffAt); // chronological
+/** Optional [since, until) kickoff window — restricts the aggregation to one period (e.g. a month). */
+export interface StatsWindow {
+  since: number;
+  until: number;
+}
+
+export function computeStats(input: StatsInput, window?: StatsWindow): Stats {
+  const inWindow = (g: StatsGame) => !window || (g.kickoffAt >= window.since && g.kickoffAt < window.until);
+  const games = [...input.games].filter(inWindow).sort((a, b) => a.kickoffAt - b.kickoffAt); // chronological
   const rsvpsByGame = new Map<number, StatsRsvp[]>();
   for (const r of input.rsvps) {
     const arr = rsvpsByGame.get(r.gameId);
@@ -70,12 +88,15 @@ export function computeStats(input: StatsInput): Stats {
 
   const acc = new Map<
     string,
-    { appearances: number; confirmedFor: number; showedConfirmed: number; run: number; best: number }
+    { appearances: number; confirmedFor: number; showedConfirmed: number; run: number; best: number; early: number }
   >();
-  for (const id of userIds) acc.set(id, { appearances: 0, confirmedFor: 0, showedConfirmed: 0, run: 0, best: 0 });
+  for (const id of userIds) acc.set(id, { appearances: 0, confirmedFor: 0, showedConfirmed: 0, run: 0, best: 0, early: 0 });
 
   for (const game of games) {
-    const squad = new Set(confirmedSquad(rsvpsByGame.get(game.id) ?? [], game.capPlayers));
+    const ordered = confirmedSquad(rsvpsByGame.get(game.id) ?? [], game.capPlayers); // IN rows by join time, capped
+    const squad = new Set(ordered);
+    const earlyBird = ordered[0]; // earliest to say "Vou" — undefined if nobody was IN
+    if (earlyBird) acc.get(earlyBird)!.early++;
     for (const id of userIds) {
       const a = acc.get(id)!;
       const present = input.presentKeys.has(key(game.id, id));
@@ -100,6 +121,7 @@ export function computeStats(input: StatsInput): Stats {
       reliabilityPct: a.confirmedFor >= MIN_GAMES_TO_RANK ? Math.round((100 * a.showedConfirmed) / a.confirmedFor) : null,
       currentStreak: a.run,
       bestStreak: a.best,
+      earlyBirdWins: a.early,
     });
   }
 
@@ -137,6 +159,62 @@ export function topByGhosts(stats: Stats, n: number): PlayerStat[] {
     .sort((a, b) => b.ghosts - a.ghosts || byName(a, b))
     .slice(0, n);
 }
+export function topByBestStreak(stats: Stats, n: number): PlayerStat[] {
+  return stats.players
+    .filter((p) => p.bestStreak > 0)
+    .sort((a, b) => b.bestStreak - a.bestStreak || byName(a, b))
+    .slice(0, n);
+}
+export function topByEarlyBird(stats: Stats, n: number): PlayerStat[] {
+  return stats.players
+    .filter((p) => p.earlyBirdWins > 0)
+    .sort((a, b) => b.earlyBirdWins - a.earlyBirdWins || byName(a, b))
+    .slice(0, n);
+}
+/** 💯 100% present-while-confirmed across at least PERFECT_RECORD_MIN_GAMES confirmed games. */
+export function perfectRecord(stats: Stats, n: number): PlayerStat[] {
+  return stats.players
+    .filter((p) => p.confirmedFor >= PERFECT_RECORD_MIN_GAMES && p.ghosts === 0)
+    .sort((a, b) => b.confirmedFor - a.confirmedFor || byName(a, b))
+    .slice(0, n);
+}
+
+// ---------- 🏆 Jogador do Mês (composite score over a period's stats) ----------
+/** Raw present-while-confirmed ratio (0..1), ungated — 0 when never confirmed. */
+export function reliabilityRatio(p: PlayerStat): number {
+  return p.confirmedFor > 0 ? (p.confirmedFor - p.ghosts) / p.confirmedFor : 0;
+}
+/** Same ratio as a 0..100 percent, or null when the player was never in a confirmed squad. */
+export function reliabilityRawPct(p: PlayerStat): number | null {
+  return p.confirmedFor > 0 ? Math.round(100 * reliabilityRatio(p)) : null;
+}
+/** The composite Jogador do Mês score (see config for the weights). */
+export function motmScore(p: PlayerStat): number {
+  return (
+    MOTM_W_APPEARANCE * p.appearances +
+    MOTM_W_STREAK * p.bestStreak +
+    Math.round(MOTM_W_RELIABILITY * reliabilityRatio(p)) -
+    MOTM_W_GHOST * p.ghosts
+  );
+}
+/**
+ * The single Jogador do Mês for a period's Stats, or null if nobody qualifies
+ * (too few games this period, or no one showed up to enough of them).
+ */
+export function playerOfTheMonth(stats: Stats): PlayerStat | null {
+  if (stats.totalGames < MIN_GAMES_FOR_MOTM) return null;
+  const ranked = stats.players
+    .filter((p) => p.appearances >= MOTM_MIN_APPEARANCES)
+    .sort(
+      (a, b) =>
+        motmScore(b) - motmScore(a) ||
+        b.appearances - a.appearances ||
+        reliabilityRatio(b) - reliabilityRatio(a) ||
+        a.ghosts - b.ghosts ||
+        byName(a, b),
+    );
+  return ranked[0] ?? null;
+}
 
 /** This player's stat row, or a zeroed one if they have no history yet. */
 export function statFor(stats: Stats, userId: string, name: string): PlayerStat {
@@ -150,6 +228,7 @@ export function statFor(stats: Stats, userId: string, name: string): PlayerStat 
       reliabilityPct: null,
       currentStreak: 0,
       bestStreak: 0,
+      earlyBirdWins: 0,
     }
   );
 }

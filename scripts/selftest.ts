@@ -10,13 +10,23 @@ import * as games from '../src/services/games';
 import { confirmedIds, splitSquad } from '../src/core/rsvp';
 import { pickWinner, tallyVotes } from '../src/core/voting';
 import { renderVoteMessage } from '../src/render/vote-message';
-import { parseDateTime, formatWhen, lisbonToUtc, lisbonParts } from '../src/core/time';
+import { parseDateTime, formatWhen, lisbonToUtc, lisbonParts, monthWindow, formatMonth } from '../src/core/time';
 import { computeFreeSlots } from '../src/core/availability';
 import { isWeeklyTriggerWindow, maybeCreateWeeklyGame } from '../src/services/weekly';
 import type { FieldClient } from '../src/services/field';
 import { loadStats } from '../src/services/stats';
-import { computeStats, statFor, topByGhosts, topByReliability } from '../src/core/stats';
-import { renderComparison, renderPersonalCard } from '../src/render/stats-message';
+import {
+  computeStats,
+  statFor,
+  topByGhosts,
+  topByReliability,
+  topByBestStreak,
+  topByEarlyBird,
+  perfectRecord,
+  playerOfTheMonth,
+  reliabilityRawPct,
+} from '../src/core/stats';
+import { renderComparison, renderPersonalCard, renderStats } from '../src/render/stats-message';
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -257,6 +267,74 @@ check('comparison: includes both names', comp.includes('Ana') && comp.includes('
 check('comparison: bolds the appearances leader', comp.includes('Presenças: **3** — 1'));
 check('comparison: lower ghosts wins (bolds the 0)', comp.includes('Fantasma: 1 — **0**'));
 check('comparison: missing reliability shows as —', comp.includes('Fiabilidade: **75%** — —'));
+
+// --- monthly view, Jogador do Mês, early-bird & best-streak boards ---
+// One May game + three June games; A always confirms first and shows up, B misses June's middle game.
+const may = lisbonToUtc(2026, 5, 10, 20, 0);
+const jun1 = lisbonToUtc(2026, 6, 5, 20, 0);
+const jun2 = lisbonToUtc(2026, 6, 12, 20, 0);
+const jun3 = lisbonToUtc(2026, 6, 19, 20, 0);
+const monthInput = {
+  games: [
+    { id: 1, capPlayers: 2, kickoffAt: may },
+    { id: 2, capPlayers: 2, kickoffAt: jun1 },
+    { id: 3, capPlayers: 2, kickoffAt: jun2 },
+    { id: 4, capPlayers: 2, kickoffAt: jun3 },
+  ],
+  rsvps: [
+    { gameId: 1, tgUserId: 'A', status: 'IN' as const, rankAt: 1 }, // A is always first to confirm
+    { gameId: 2, tgUserId: 'A', status: 'IN' as const, rankAt: 1 },
+    { gameId: 3, tgUserId: 'A', status: 'IN' as const, rankAt: 1 },
+    { gameId: 4, tgUserId: 'A', status: 'IN' as const, rankAt: 1 },
+    { gameId: 1, tgUserId: 'B', status: 'IN' as const, rankAt: 2 },
+    { gameId: 2, tgUserId: 'B', status: 'IN' as const, rankAt: 2 },
+    { gameId: 3, tgUserId: 'B', status: 'IN' as const, rankAt: 2 },
+    { gameId: 4, tgUserId: 'B', status: 'IN' as const, rankAt: 2 },
+  ],
+  presentKeys: new Set(['1:A', '2:A', '3:A', '4:A', '1:B', '2:B', '4:B']), // B no-shows jun2 (game 3)
+  names: new Map([
+    ['A', 'Ari'],
+    ['B', 'Bru'],
+  ]),
+};
+const allTime = computeStats(monthInput);
+const monthStats = computeStats(monthInput, monthWindow(NOW)); // NOW is June 2026
+
+check('month: window keeps only June games (3 of 4)', monthStats.totalGames === 3 && allTime.totalGames === 4);
+check('month: A confirmed + present all 3, no ghost', statFor(monthStats, 'A', 'Ari').appearances === 3 && statFor(monthStats, 'A', 'Ari').ghosts === 0);
+check('month: B is a ghost once (jun2 no-show)', statFor(monthStats, 'B', 'Bru').ghosts === 1 && statFor(monthStats, 'B', 'Bru').appearances === 2);
+check('month: raw reliability ungated (B = 67%)', reliabilityRawPct(statFor(monthStats, 'B', 'Bru')) === 67);
+check('MOTM: Ari wins the month', playerOfTheMonth(monthStats)?.tgUserId === 'A');
+const mayOnly = computeStats(monthInput, { since: lisbonToUtc(2026, 5, 1, 0, 0), until: lisbonToUtc(2026, 6, 1, 0, 0) });
+check('MOTM: no winner when the month has < 2 games', mayOnly.totalGames === 1 && playerOfTheMonth(mayOnly) === null);
+
+check('early-bird: A was first to confirm all 4 games', statFor(allTime, 'A', 'Ari').earlyBirdWins === 4 && statFor(allTime, 'B', 'Bru').earlyBirdWins === 0);
+check('early-bird board: A on top', topByEarlyBird(allTime, 5)[0]?.tgUserId === 'A');
+check('best-streak board: A best is 4 (all-time)', topByBestStreak(allTime, 5)[0]?.tgUserId === 'A' && statFor(allTime, 'A', 'Ari').bestStreak === 4);
+
+// perfect record: 100% present-while-confirmed across >= PERFECT_RECORD_MIN_GAMES (5) games
+const perfectInput = {
+  games: [1, 2, 3, 4, 5].map((id) => ({ id, capPlayers: 2, kickoffAt: id * 1000 })),
+  rsvps: [1, 2, 3, 4, 5].flatMap((g) => [
+    { gameId: g, tgUserId: 'P', status: 'IN' as const, rankAt: 1 },
+    { gameId: g, tgUserId: 'Q', status: 'IN' as const, rankAt: 2 },
+  ]),
+  presentKeys: new Set(['1:P', '2:P', '3:P', '4:P', '5:P', '1:Q', '2:Q', '4:Q', '5:Q']), // Q misses game 3
+  names: new Map([
+    ['P', 'Perfeito'],
+    ['Q', 'Quase'],
+  ]),
+};
+const perfStats = computeStats(perfectInput);
+check('perfect record: P qualifies (5/5), Q excluded (1 ghost)', perfectRecord(perfStats, 5).map((p) => p.tgUserId).join() === 'P');
+
+// render: the month block + new boards appear in /stats output
+const groupRender = renderStats(allTime, monthStats, formatMonth(NOW), null);
+check('render: month block shows the month name', groupRender.includes('Este mês') && groupRender.includes(formatMonth(NOW)));
+check('render: MOTM badge names the winner', groupRender.includes('Jogador do Mês') && groupRender.includes('Ari'));
+check('render: best-streak & early-bird boards present', groupRender.includes('Maior sequência de sempre') && groupRender.includes('Early bird'));
+const emptyMonth = computeStats(monthInput, { since: lisbonToUtc(2027, 1, 1, 0, 0), until: lisbonToUtc(2027, 2, 1, 0, 0) });
+check('render: empty month shows the gentle fallback', emptyMonth.totalGames === 0 && renderStats(allTime, emptyMonth, 'janeiro', null).includes('ainda sem jogos este mês'));
 
 // --- weekly auto-game (Sunday 18:00) with a fake FieldClient — stays offline ---
 const fakeField: FieldClient = {

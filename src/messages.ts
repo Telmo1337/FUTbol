@@ -4,7 +4,7 @@
 // To add another language later, swap this object behind a tiny selector.
 
 import { esc } from './util';
-import { MIN_GAMES_TO_RANK } from './config';
+import { MIN_GAMES_TO_RANK, PERFECT_RECORD_MIN_GAMES } from './config';
 
 export const M = {
   start:
@@ -157,6 +157,20 @@ export const M = {
     ghostsTitle: '👻 **Mais fantasma**',
     ghostsLine: (n: number) => `${n} ${n === 1 ? 'falta' : 'faltas'}`,
     ghostsEmpty: '*sem fantasmas — que grupo de confiança! 👏*',
+    // ---- "Este mês" highlight ----
+    monthTitle: (month: string) => `📅 **Este mês — ${month}**`,
+    monthNone: '*ainda sem jogos este mês — o primeiro já conta ⚽*',
+    motmLine: (name: string, games: number, pct: number | null, streak: number) =>
+      `🏆 Jogador do Mês: **${name}** — ${games} ${games === 1 ? 'jogo' : 'jogos'}` +
+      `${pct != null ? ` · ${pct}%` : ''}${streak > 1 ? ` · 🔥${streak}` : ''}`,
+    monthAppearancesTitle: '👟 **Presenças do mês**',
+    // ---- new all-time boards ----
+    bestStreakTitle: '📈 **Maior sequência de sempre**',
+    bestStreakLine: (n: number) => `${n} seguidos`,
+    earlyBirdTitle: '🐦 **Early bird** *(primeiro a dizer "Vou")*',
+    earlyBirdLine: (n: number) => `${n} ${n === 1 ? 'vez' : 'vezes'}`,
+    perfectTitle: `💯 **Registo perfeito** *(100% em ≥${PERFECT_RECORD_MIN_GAMES} jogos)*`,
+    perfectLine: (n: number) => `${n} ${n === 1 ? 'jogo' : 'jogos'}`,
   },
 
   // ---- /eu personal card ----

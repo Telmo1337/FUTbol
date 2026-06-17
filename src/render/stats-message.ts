@@ -1,10 +1,15 @@
 import { M } from '../messages';
 import { esc } from '../util';
 import { formatWhen } from '../core/time';
-import { LEADERBOARD_TOP_N, MIN_GAMES_TO_RANK } from '../config';
+import { LEADERBOARD_TOP_N, MIN_GAMES_TO_RANK, MONTH_TOP_N } from '../config';
 import {
+  playerOfTheMonth,
+  perfectRecord,
   rankIn,
+  reliabilityRawPct,
   topByAppearances,
+  topByBestStreak,
+  topByEarlyBird,
   topByGhosts,
   topByReliability,
   topByStreak,
@@ -19,15 +24,27 @@ function board(rows: PlayerStat[], value: (p: PlayerStat) => string): string[] {
   return rows.map((p, i) => `${rank(i)} ${esc(p.name)} — ${value(p)}`);
 }
 
-export function renderStats(stats: Stats, sinceLabel: string | null): string {
+export function renderStats(stats: Stats, month: Stats, monthLabel: string, sinceLabel: string | null): string {
   if (stats.totalGames === 0) return [M.stats.title, '', M.stats.none].join('\n');
 
   const parts: string[] = [M.stats.title];
   if (sinceLabel) parts.push(M.stats.since(sinceLabel));
-  parts.push(M.stats.totalGames(stats.totalGames), '');
+  parts.push(M.stats.totalGames(stats.totalGames));
+
+  // 📅 this month: Jogador do Mês badge + a compact appearances mini-board
+  parts.push('', M.stats.monthTitle(monthLabel));
+  if (month.totalGames === 0) {
+    parts.push(M.stats.monthNone);
+  } else {
+    const motm = playerOfTheMonth(month);
+    if (motm) parts.push(M.stats.motmLine(esc(motm.name), motm.appearances, reliabilityRawPct(motm), motm.bestStreak));
+    const mApp = topByAppearances(month, MONTH_TOP_N);
+    if (mApp.length > 0)
+      parts.push(M.stats.monthAppearancesTitle, ...board(mApp, (p) => M.stats.appearancesLine(p.appearances)));
+  }
 
   // 🏅 reliability (always shown — has its own "warming up" fallback)
-  parts.push(M.stats.reliableTitle);
+  parts.push('', M.stats.reliableTitle);
   const rel = topByReliability(stats, LEADERBOARD_TOP_N);
   if (rel.length === 0) parts.push(M.stats.reliableEmpty);
   else parts.push(...board(rel, (p) => M.stats.reliableLine(p.reliabilityPct!, p.confirmedFor - p.ghosts, p.confirmedFor)));
@@ -36,9 +53,21 @@ export function renderStats(stats: Stats, sinceLabel: string | null): string {
   const app = topByAppearances(stats, LEADERBOARD_TOP_N);
   if (app.length > 0) parts.push('', M.stats.appearancesTitle, ...board(app, (p) => M.stats.appearancesLine(p.appearances)));
 
-  // 🔥 streaks (skip if none active)
+  // 🔥 current streaks (skip if none active)
   const streak = topByStreak(stats, LEADERBOARD_TOP_N);
   if (streak.length > 0) parts.push('', M.stats.streakTitle, ...board(streak, (p) => M.stats.streakLine(p.currentStreak)));
+
+  // 📈 best streak ever (skip if nobody has a run yet)
+  const best = topByBestStreak(stats, LEADERBOARD_TOP_N);
+  if (best.length > 0) parts.push('', M.stats.bestStreakTitle, ...board(best, (p) => M.stats.bestStreakLine(p.bestStreak)));
+
+  // 🐦 early bird (skip if nobody has been first to confirm)
+  const early = topByEarlyBird(stats, LEADERBOARD_TOP_N);
+  if (early.length > 0) parts.push('', M.stats.earlyBirdTitle, ...board(early, (p) => M.stats.earlyBirdLine(p.earlyBirdWins)));
+
+  // 💯 perfect record (skip until someone earns it)
+  const perfect = perfectRecord(stats, LEADERBOARD_TOP_N);
+  if (perfect.length > 0) parts.push('', M.stats.perfectTitle, ...board(perfect, (p) => M.stats.perfectLine(p.confirmedFor)));
 
   // 👻 ghosts (always shown — fallback praises a clean week)
   parts.push('', M.stats.ghostsTitle);

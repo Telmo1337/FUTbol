@@ -17,8 +17,9 @@ import { parseCb } from './components';
 import { boardEmbed } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
 import * as games from '../services/games';
-import { loadStats } from '../services/stats';
-import { statFor } from '../core/stats';
+import { loadStats, loadStatsInput } from '../services/stats';
+import { computeStats, statFor } from '../core/stats';
+import { formatMonth, monthWindow } from '../core/time';
 import { renderComparison, renderPersonalCard, renderStats, sinceLabel } from '../render/stats-message';
 
 interface DiscordUser {
@@ -148,11 +149,17 @@ async function onCommand(
     }
 
     case 'stats': {
-      const stats = await loadStats(repo, channelId);
       // /stats jogador:@X → that player's card (public); /stats alone → the group boards.
       const target = resolveUserOption(i, 'jogador');
-      if (target) return publicEmbed(renderPersonalCard(statFor(stats, target.tgUserId, target.displayName), stats));
-      return publicEmbed(renderStats(stats, sinceLabel(stats.firstKickoff)));
+      if (target) {
+        const stats = await loadStats(repo, channelId);
+        return publicEmbed(renderPersonalCard(statFor(stats, target.tgUserId, target.displayName), stats));
+      }
+      // Group boards: load once, aggregate all-time + this month from the same rows.
+      const input = await loadStatsInput(repo, channelId);
+      const stats = computeStats(input);
+      const month = computeStats(input, monthWindow(now));
+      return publicEmbed(renderStats(stats, month, formatMonth(now), sinceLabel(stats.firstKickoff)));
     }
 
     case 'eu': {
