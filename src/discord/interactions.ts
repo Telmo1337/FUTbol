@@ -19,7 +19,7 @@ import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
 import * as games from '../services/games';
 import { loadStats } from '../services/stats';
 import { statFor } from '../core/stats';
-import { renderPersonalCard, renderStats, sinceLabel } from '../render/stats-message';
+import { renderComparison, renderPersonalCard, renderStats, sinceLabel } from '../render/stats-message';
 
 interface DiscordUser {
   id: string;
@@ -36,6 +36,13 @@ interface Interaction {
     name?: string; // slash command
     custom_id?: string; // component / modal
     components?: { components?: { custom_id: string; value?: string }[] }[]; // modal submit
+    // Slash-command arguments. For a USER option, `value` is the picked user's snowflake,
+    // and `resolved` carries that user's name + server nick so we never need a name lookup.
+    options?: { name: string; type: number; value?: string }[];
+    resolved?: {
+      users?: Record<string, DiscordUser>;
+      members?: Record<string, { nick?: string | null }>;
+    };
   };
 }
 
@@ -46,6 +53,16 @@ function playerFrom(i: Interaction): Player | null {
   if (!u) return null;
   const displayName = i.member?.nick || u.global_name || u.username || 'Jogador';
   return { tgUserId: u.id, displayName, username: u.username ?? null };
+}
+
+/** Resolve a USER slash-command option into a target (id + display name), or null if absent. */
+function resolveUserOption(i: Interaction, name: string): { tgUserId: string; displayName: string } | null {
+  const id = i.data?.options?.find((o) => o.name === name)?.value;
+  if (!id) return null;
+  const u = i.data?.resolved?.users?.[id];
+  const nick = i.data?.resolved?.members?.[id]?.nick;
+  const displayName = nick || u?.global_name || u?.username || 'Jogador';
+  return { tgUserId: id, displayName };
 }
 
 function isAdmin(env: Env, userId: string | undefined): boolean {
@@ -98,7 +115,7 @@ async function onCommand(
     case 'ajuda':
       return ephemeral(M.help);
 
-    case 'euquem':
+    case 'meuid':
       return ephemeral(M.whoami(player?.tgUserId ?? '?'));
 
     case 'novojogo': {
@@ -132,13 +149,26 @@ async function onCommand(
 
     case 'stats': {
       const stats = await loadStats(repo, channelId);
+      // /stats jogador:@X → that player's card (public); /stats alone → the group boards.
+      const target = resolveUserOption(i, 'jogador');
+      if (target) return publicEmbed(renderPersonalCard(statFor(stats, target.tgUserId, target.displayName), stats));
       return publicEmbed(renderStats(stats, sinceLabel(stats.firstKickoff)));
     }
 
     case 'eu': {
       const stats = await loadStats(repo, channelId);
       const name = player?.displayName ?? 'Jogador';
-      return ephemeralEmbed(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats.totalGames));
+      return ephemeralEmbed(renderPersonalCard(statFor(stats, player?.tgUserId ?? '0', name), stats));
+    }
+
+    case 'comparar': {
+      const a = resolveUserOption(i, 'a');
+      const b = resolveUserOption(i, 'b');
+      if (!a || !b) return ephemeral(M.cb.error);
+      const stats = await loadStats(repo, channelId);
+      return publicEmbed(
+        renderComparison(statFor(stats, a.tgUserId, a.displayName), statFor(stats, b.tgUserId, b.displayName)),
+      );
     }
 
     default:

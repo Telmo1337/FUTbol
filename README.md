@@ -26,9 +26,10 @@ are handled for you. **European Portuguese (pt-PT)**, runs for **€0**.
 | `/jogo` | Re-mostrar o jogo atual no canal |
 | `/fecharvotacao` | Fechar já a votação *(só admin)* |
 | `/cancelar` | Cancelar o jogo atual *(só admin)* |
-| `/stats` | Ranking de presenças e fiabilidade 📊 |
-| `/eu` | As tuas estatísticas 📇 *(só tu vês)* |
-| `/euquem` | Ver o teu ID de Discord |
+| `/stats` | Rankings do grupo 📊; `/stats jogador:@X` mostra o cartão de um jogador *(público)* |
+| `/eu` | As tuas estatísticas 📇, com a tua posição em cada ranking *(só tu vês)* |
+| `/comparar` | Comparar dois jogadores lado a lado ⚔️ *(`/comparar a:@X b:@Y`)* |
+| `/meuid` | Ver o teu ID de Discord |
 | `/ajuda` | Ajuda |
 
 ### O formulário do `/novojogo`

@@ -19,9 +19,10 @@ export const M = {
     '`/jogo` — ver o jogo atual\n' +
     '`/fecharvotacao` — fechar já a votação *(só admin)*\n' +
     '`/cancelar` — cancelar o jogo atual *(só admin)*\n' +
-    '`/stats` — ranking de presenças e fiabilidade 📊\n' +
-    '`/eu` — as tuas estatísticas 📇\n' +
-    '`/euquem` — ver o teu ID de Discord\n' +
+    '`/stats` — rankings do grupo; `/stats jogador` vê o cartão de alguém 📊\n' +
+    '`/eu` — as tuas estatísticas *(só tu vês)* 📇\n' +
+    '`/comparar` — comparar dois jogadores lado a lado ⚔️\n' +
+    '`/meuid` — ver o teu ID de Discord\n' +
     '`/ajuda` — esta mensagem',
 
   whoami: (id: string) =>
@@ -167,6 +168,15 @@ export const M = {
       `🏅 Fiabilidade: a aquecer 🔥 *(faltam ${missing} ${missing === 1 ? 'jogo' : 'jogos'} p/ entrar no ranking)*`,
     streak: (cur: number, best: number) => `🔥 Sequência: **${cur}** *(melhor: ${best})*`,
     ghosts: (n: number) => `👻 Fantasma: **${n}** ${n === 1 ? 'vez' : 'vezes'}`,
+    rankSuffix: (pos: number, total: number) => ` · ${pos}º de ${total}`,
     none: 'Ainda não tens jogos registados. Aparece num jogo e carrega em **Cheguei ✅**.',
+  },
+
+  comparar: {
+    title: (a: string, b: string) => `⚔️ **${a}** vs **${b}**`,
+    appearances: (a: string, b: string) => `👟 Presenças: ${a} — ${b}`,
+    reliability: (a: string, b: string) => `🏅 Fiabilidade: ${a} — ${b}`,
+    streak: (a: string, b: string, ba: number, bb: number) => `🔥 Sequência: ${a} — ${b} *(melhor: ${ba} — ${bb})*`,
+    ghosts: (a: string, b: string) => `👻 Fantasma: ${a} — ${b}`,
   },
 };

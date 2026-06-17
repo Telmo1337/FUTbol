@@ -16,6 +16,7 @@ import { isWeeklyTriggerWindow, maybeCreateWeeklyGame } from '../src/services/we
 import type { FieldClient } from '../src/services/field';
 import { loadStats } from '../src/services/stats';
 import { computeStats, statFor, topByGhosts, topByReliability } from '../src/core/stats';
+import { renderComparison, renderPersonalCard } from '../src/render/stats-message';
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -241,6 +242,21 @@ check('computeStats: sub earns appearance, no reliability', p20.appearances === 
 check('computeStats: late sub current streak 1', statFor(sStats, '30', 'Caz').currentStreak === 1);
 check('computeStats: reliability board only ranks >= 3 games', topByReliability(sStats, 5).every((p) => p.confirmedFor >= 3));
 check('computeStats: ghost board includes p10', topByGhosts(sStats, 5).some((p) => p.tgUserId === '10'));
+
+// --- render: personal card with rank + comparison ---
+const cardAna = renderPersonalCard(p10, sStats);
+check('card: shows appearances rank (1º de 3)', cardAna.includes('1º de 3'));
+check('card: shows reliability rank (1º de 1)', cardAna.includes('1º de 1'));
+check('card: no streak rank when current streak is 0', !/Sequência:.*º de/.test(cardAna));
+const cardZero = renderPersonalCard(statFor(sStats, '999', 'Zé'), sStats);
+check('card: zeroed player (never played) shows the empty card', cardZero.includes('Zé') && cardZero.includes('Aparece num jogo'));
+check('statFor: unknown id returns a zeroed row with the given name', statFor(sStats, '999', 'Zé').appearances === 0 && statFor(sStats, '999', 'Zé').name === 'Zé');
+
+const comp = renderComparison(p10, p20); // Ana (3 jogos, 75%, 1 fantasma) vs Bea (1 jogo, sem fiab., 0 fantasmas)
+check('comparison: includes both names', comp.includes('Ana') && comp.includes('Bea'));
+check('comparison: bolds the appearances leader', comp.includes('Presenças: **3** — 1'));
+check('comparison: lower ghosts wins (bolds the 0)', comp.includes('Fantasma: 1 — **0**'));
+check('comparison: missing reliability shows as —', comp.includes('Fiabilidade: **75%** — —'));
 
 // --- weekly auto-game (Sunday 18:00) with a fake FieldClient — stays offline ---
 const fakeField: FieldClient = {
