@@ -14,7 +14,7 @@ import type { Sender } from './rest';
 import { M } from '../messages';
 import { assistsEnabled, golosEnabled, pagamentosEnabled, parseAdminIds } from '../util';
 import { capturePanelComponents, historyComponents, parseCb, paymentPanelComponents, teamsPanelComponents } from './components';
-import { boardEmbed } from './embeds';
+import { boardEmbed, COLORS } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
 import { resultModal, parseResultFields } from './teams';
 import { paymentPriceModal, parsePriceField } from './payments';
@@ -139,7 +139,7 @@ async function capturePanelData(repo: Repo, game: Game, assists: boolean): Promi
 async function paymentPanelData(repo: Repo, game: Game): Promise<object> {
   const state = await loadPaymentState(repo, game);
   return {
-    embeds: [boardEmbed(renderPaymentPanel(state))],
+    embeds: [boardEmbed(renderPaymentPanel(state), COLORS.payment)],
     components: paymentPanelComponents(game.id, state.players, state.paid),
     flags: 64,
   };

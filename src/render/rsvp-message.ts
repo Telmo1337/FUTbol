@@ -1,6 +1,6 @@
 import { M } from '../messages';
 import { esc } from '../util';
-import { formatWhen } from '../core/time';
+import { discordTs } from '../core/time';
 import type { SquadSplit } from '../core/rsvp';
 
 export interface RenderRsvpOpts {
@@ -38,7 +38,7 @@ export function renderRsvpMessage(o: RenderRsvpOpts): string {
 
   parts.push('');
   parts.push(inCount >= o.min ? M.rsvp.confirmedLine(inCount, o.min) : M.rsvp.needMore(o.min - inCount, inCount, o.min));
-  if (o.state === 'open' && o.rsvpCloseAt != null) parts.push(M.rsvp.closesAt(formatWhen(o.rsvpCloseAt)));
+  if (o.state === 'open' && o.rsvpCloseAt != null) parts.push(M.rsvp.closesAt(discordTs(o.rsvpCloseAt)));
 
   return parts.join('\n');
 }

@@ -6,7 +6,7 @@ import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
 import type { Game } from '../types';
 import { splitSquad } from '../core/rsvp';
-import { boardEmbed } from '../discord/embeds';
+import { boardEmbed, COLORS } from '../discord/embeds';
 import { paymentBoardComponents, type TeamMember } from '../discord/components';
 import { renderPaymentBoard } from '../render/payment-message';
 
@@ -18,10 +18,10 @@ export interface PaymentState {
 }
 
 async function sendBoard(api: Sender, chatId: string, text: string, components?: unknown[]): Promise<string> {
-  return api.send(chatId, { embeds: [boardEmbed(text)], components: components ?? [] });
+  return api.send(chatId, { embeds: [boardEmbed(text, COLORS.payment)], components: components ?? [] });
 }
 async function editBoard(api: Sender, chatId: string, msgId: string, text: string, components?: unknown[]) {
-  await api.edit(chatId, msgId, { content: '', embeds: [boardEmbed(text)], components: components ?? [] });
+  await api.edit(chatId, msgId, { content: '', embeds: [boardEmbed(text, COLORS.payment)], components: components ?? [] });
 }
 
 /** Read the confirmed squad + who has paid + the current price for a game. */

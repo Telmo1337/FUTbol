@@ -21,7 +21,7 @@ import {
   tieComponents,
   voteComponents,
 } from '../discord/components';
-import { boardEmbed } from '../discord/embeds';
+import { boardEmbed, COLORS } from '../discord/embeds';
 
 const MAX_PING = 15;
 
@@ -44,19 +44,19 @@ async function sendBoard(
   chatId: string,
   text: string,
   components?: unknown[],
-  opts?: { content?: string; allowedMentions?: ('users' | 'everyone')[] },
+  opts?: { content?: string; allowedMentions?: ('users' | 'everyone')[]; color?: number },
 ): Promise<string> {
   return api.send(chatId, {
     content: opts?.content,
-    embeds: [boardEmbed(text)],
+    embeds: [boardEmbed(text, opts?.color)],
     components: components ?? [],
     allowedMentions: opts?.allowedMentions,
   });
 }
 
 /** Edit a board's embed (and buttons) in place, clearing any leftover ping content. */
-async function editBoard(api: Sender, chatId: string, msgId: string, text: string, components?: unknown[]) {
-  await api.edit(chatId, msgId, { content: '', embeds: [boardEmbed(text)], components: components ?? [] });
+async function editBoard(api: Sender, chatId: string, msgId: string, text: string, components?: unknown[], color?: number) {
+  await api.edit(chatId, msgId, { content: '', embeds: [boardEmbed(text, color)], components: components ?? [] });
 }
 
 /** Strip the buttons off a message, leaving its text/embed untouched. */
@@ -115,6 +115,7 @@ export async function createGame(
   const msgId = await sendBoard(api, input.chatId, board, voteComponents(gameId, slots), {
     content: GROUP_PING,
     allowedMentions: ['users', 'everyone'],
+    color: COLORS.vote,
   });
   await repo.setVoteMsg(gameId, msgId, input.now);
 }
@@ -157,7 +158,7 @@ async function rerenderVote(api: Sender, repo: Repo, game: Game): Promise<void> 
     countVoters(votes),
     groupVoters(named),
   );
-  await editBoard(api, game.chatId, game.voteMsgId, text, voteComponents(game.id, slots));
+  await editBoard(api, game.chatId, game.voteMsgId, text, voteComponents(game.id, slots), COLORS.vote);
 }
 
 export async function closeVoting(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
@@ -172,7 +173,7 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
     if (game.voteMsgId) {
       const named = await repo.getVotesWithNames(game.id);
       const tieText = renderVoteTie(game.locationNote, tallyVotes(slots, votes), groupVoters(named));
-      await editBoard(api, game.chatId, game.voteMsgId, tieText);
+      await editBoard(api, game.chatId, game.voteMsgId, tieText, undefined, COLORS.vote);
       await removeKeyboard(api, game.chatId, game.voteMsgId);
     }
     await send(api, game.chatId, M.tieAdminPrompt, tieComponents(game.id, tied.length ? tied : slots));
@@ -263,7 +264,14 @@ async function rerenderRsvp(
     rsvpCloseAt: game.rsvpCloseAt,
     state,
   });
-  await editBoard(api, game.chatId, game.rsvpMsgId, text, state === 'open' ? rsvpComponents(game.id) : undefined);
+  await editBoard(
+    api,
+    game.chatId,
+    game.rsvpMsgId,
+    text,
+    state === 'open' ? rsvpComponents(game.id) : undefined,
+    state === 'cancelled' ? COLORS.cancelled : undefined,
+  );
   if (state !== 'open') await removeKeyboard(api, game.chatId, game.rsvpMsgId);
 }
 
@@ -339,7 +347,7 @@ export async function repost(api: Sender, repo: Repo, game: Game, now: number): 
       groupVoters(named),
     );
     if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
-    const msgId = await sendBoard(api, game.chatId, text, voteComponents(game.id, slots));
+    const msgId = await sendBoard(api, game.chatId, text, voteComponents(game.id, slots), { color: COLORS.vote });
     await repo.setVoteMsg(game.id, msgId, now);
   } else if (game.status === 'RSVP_OPEN') {
     const winner = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
@@ -368,7 +376,7 @@ export async function repost(api: Sender, repo: Repo, game: Game, now: number): 
       pending: v.confirmedAbsent,
       checkinCloseAt: game.checkinCloseAt,
     });
-    const msgId = await sendBoard(api, game.chatId, text, checkinComponents(game.id));
+    const msgId = await sendBoard(api, game.chatId, text, checkinComponents(game.id), { color: COLORS.checkin });
     await repo.setCheckinMsg(game.id, msgId, now);
   }
 }
@@ -392,7 +400,7 @@ export async function openCheckin(api: Sender, repo: Repo, game: Game, now: numb
     pending: split.confirmed.map((p) => ({ displayName: p.displayName })),
     checkinCloseAt: closeAt,
   });
-  const msgId = await sendBoard(api, game.chatId, text, checkinComponents(game.id));
+  const msgId = await sendBoard(api, game.chatId, text, checkinComponents(game.id), { color: COLORS.checkin });
   await repo.setCheckinMsg(game.id, msgId, now);
 }
 
@@ -416,7 +424,7 @@ async function rerenderCheckin(api: Sender, repo: Repo, game: Game): Promise<voi
     pending: v.confirmedAbsent,
     checkinCloseAt: game.checkinCloseAt,
   });
-  await editBoard(api, game.chatId, game.checkinMsgId, text, checkinComponents(game.id));
+  await editBoard(api, game.chatId, game.checkinMsgId, text, checkinComponents(game.id), COLORS.checkin);
 }
 
 // CHECKIN_OPEN → PLAYED: window closed. Lock the board, assign ghosts, post the recap.
