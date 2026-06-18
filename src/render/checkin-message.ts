@@ -1,6 +1,6 @@
 import { M } from '../messages';
 import { esc } from '../util';
-import { formatWhen } from '../core/time';
+import { discordTs } from '../core/time';
 
 export interface RenderCheckinOpts {
   winnerLabel: string;
@@ -16,6 +16,6 @@ export function renderCheckinBoard(o: RenderCheckinOpts): string {
   const parts: string[] = [M.checkin.title(o.winnerLabel), ''];
   parts.push(M.checkin.present(o.present.length), bullets(o.present));
   parts.push('', M.checkin.pending(o.pending.length), bullets(o.pending));
-  if (o.checkinCloseAt != null) parts.push('', M.checkin.closesAt(formatWhen(o.checkinCloseAt)));
+  if (o.checkinCloseAt != null) parts.push('', M.checkin.closesAt(discordTs(o.checkinCloseAt)));
   return parts.join('\n');
 }

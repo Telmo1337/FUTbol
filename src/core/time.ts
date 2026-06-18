@@ -31,6 +31,16 @@ export function formatDay(ms: number): string {
   return `${WEEKDAY_SHORT_PT[p.weekday]}, ${pad2(p.day)} ${MONTH_SHORT_PT[p.month]}`;
 }
 
+/**
+ * A Discord auto-timestamp tag, e.g. `<t:1718568000:R>` → "daqui a 3 horas" — rendered LIVE
+ * by each client in the viewer's own timezone, and it keeps ticking with no edit from us.
+ * Styles: R relative · F long date+time · f short · t time · D date. Only renders in message
+ * content / embed description-or-fields (NOT in an embed title).
+ */
+export function discordTs(ms: number, style: 'R' | 'F' | 'f' | 't' | 'D' = 'R'): string {
+  return `<t:${Math.floor(ms / 1000)}:${style}>`;
+}
+
 /** pt-PT month name for a moment, e.g. "junho" (lowercase, as Portuguese writes months). */
 export function formatMonth(ms: number): string {
   return MONTH_LONG_PT[lisbonParts(ms).month];

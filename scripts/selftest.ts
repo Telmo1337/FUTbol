@@ -10,7 +10,7 @@ import * as games from '../src/services/games';
 import { confirmedIds, splitSquad } from '../src/core/rsvp';
 import { pickWinner, tallyVotes } from '../src/core/voting';
 import { renderVoteMessage } from '../src/render/vote-message';
-import { parseDateTime, formatWhen, formatDay, lisbonToUtc, lisbonParts, monthWindow, formatMonth } from '../src/core/time';
+import { parseDateTime, formatWhen, formatDay, discordTs, lisbonToUtc, lisbonParts, monthWindow, formatMonth } from '../src/core/time';
 import { computeFreeSlots } from '../src/core/availability';
 import { isWeeklyTriggerWindow, maybeCreateWeeklyGame } from '../src/services/weekly';
 import type { FieldClient } from '../src/services/field';
@@ -80,6 +80,7 @@ check('formatWhen produces a label', /\d{2}:\d{2}/.test(formatWhen(NOW)));
 check('formatDay: pt-PT short label', formatDay(NOW) === 'Seg, 15 jun');
 check('formatWhen: pt-PT short + time', formatWhen(NOW) === 'Seg, 15 jun · 13:00');
 check('formatMonth: pt-PT long lowercase', formatMonth(NOW) === 'junho');
+check('discordTs: native live timestamp tag (seconds + style)', /^<t:\d+:R>$/.test(discordTs(NOW)) && discordTs(NOW, 'F') === `<t:${Math.floor(NOW / 1000)}:F>`);
 
 // vote board shows who voted what (names listed under each slot)
 const demoSlots = [{ id: 7, gameId: 1, kickoffAt: NOW, label: 'Sáb 18:00', sortOrder: 0 }];
@@ -91,6 +92,7 @@ const demoBoard = renderVoteMessage(
   new Map([[7, ['Telmo', 'Ana']]]),
 );
 check('vote board lists voter names under a slot', demoBoard.includes('Telmo') && demoBoard.includes('Ana'));
+check('vote board: deadline shown as a live Discord timestamp', demoBoard.includes('<t:'));
 
 // --- pure computeFreeSlots: Sunday exclusion, >=18h filter, booked-slot subtraction ---
 // NOW = Mon 2026-06-15. Field uses day 1=Mon..7=Sun (fieldDayOfSunday=7).

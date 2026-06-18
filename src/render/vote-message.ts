@@ -1,6 +1,6 @@
 import { M } from '../messages';
 import { esc } from '../util';
-import { formatWhen } from '../core/time';
+import { discordTs } from '../core/time';
 import type { Tally } from '../core/voting';
 
 const NUM = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
@@ -31,7 +31,7 @@ export function renderVoteMessage(
     '',
     M.vote.pickHint,
     M.vote.voters(voters),
-    M.vote.closesAt(formatWhen(voteDeadline)),
+    M.vote.closesAt(discordTs(voteDeadline)),
   ].join('\n');
 }
 
