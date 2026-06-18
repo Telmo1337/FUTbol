@@ -37,6 +37,7 @@ import { loadPaymentState, setPaidSet } from '../src/services/payments';
 import { renderPaymentBoard } from '../src/render/payment-message';
 import { parsePriceField } from '../src/discord/payments';
 import { renderCapturePanel } from '../src/render/capture-message';
+import { renderResultCard, renderTeamsBoard } from '../src/render/teams-message';
 import { seedTestGame } from '../src/services/testseed';
 import { loadHistory } from '../src/services/history';
 import { renderComparison, renderPersonalCard, renderStats, renderTopScorers } from '../src/render/stats-message';
@@ -55,11 +56,17 @@ const sent: { chatId: string; text: string }[] = [];
 let msgId = 1000;
 const sender: Sender = {
   async send(chatId, msg) {
-    // Boards are now embeds, so include their title+description in the recorded text.
+    // Boards are embeds — record title + description + any field name/value + footer.
     const emb = (msg.embeds ?? [])
       .map((e) => {
-        const x = e as { title?: string; description?: string };
-        return `${x.title ?? ''}\n${x.description ?? ''}`;
+        const x = e as {
+          title?: string;
+          description?: string;
+          fields?: { name: string; value: string }[];
+          footer?: { text: string };
+        };
+        const f = (x.fields ?? []).map((fl) => `${fl.name}\n${fl.value}`).join('\n');
+        return [x.title ?? '', x.description ?? '', f, x.footer?.text ?? ''].join('\n');
       })
       .join('\n');
     sent.push({ chatId, text: `${msg.content ?? ''}\n${emb}` });
@@ -262,6 +269,12 @@ check('teams: publish locks the teams (teams_locked_at set)', game.teamsLockedAt
 // score: Alpha 5 – 2 Beta → user 2 wins, users 3 & 4 lose
 await recordResult(sender, repo, game, 5, 2, '1', game.checkinCloseAt! + 20);
 check('result: public card posted', anySentIncludes('Resultado') && anySentIncludes('Vitória da'));
+// embed fields: Alpha | Beta side by side on the result card + teams board
+const demoView = { alpha: [{ tgUserId: '2', displayName: 'A' }], beta: [{ tgUserId: '3', displayName: 'B' }], out: [{ tgUserId: '4', displayName: 'C' }] };
+const rcCard = renderResultCard({ ...demoView, out: [] }, 3, 2, 'Sáb');
+check('result card: Alpha/Beta as 2 inline embed fields + score in body', (rcCard.fields?.length ?? 0) === 2 && rcCard.fields?.[0].inline === true && (rcCard.description ?? '').includes('Vitória'));
+const tbCard = renderTeamsBoard(demoView);
+check('teams board: Alpha/Beta inline + "de fora" full-width field', (tbCard.fields?.length ?? 0) === 3 && tbCard.fields?.[0].inline === true && tbCard.fields?.[2].inline !== true);
 const sR = await loadStats(repo, chatId);
 check('result: user 2 has 1 win (V-E-D 1-0-0)', statFor(sR, '2', 'u2').wins === 1 && statFor(sR, '2', 'u2').losses === 0 && statFor(sR, '2', 'u2').resultGames === 1);
 check('result: user 3 has 1 loss', statFor(sR, '3', 'u3').losses === 1 && statFor(sR, '3', 'u3').wins === 0);

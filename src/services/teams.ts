@@ -6,7 +6,7 @@ import type { Repo } from '../db/repo';
 import type { Game, ResultSide } from '../types';
 import { splitSquad } from '../core/rsvp';
 import { formatDay } from '../core/time';
-import { editBoard, sendBoard } from './board';
+import { editCard, sendBoard, sendCard } from './board';
 import { captureBoardComponents, teamsBoardComponents, teamsPlaceholderComponents, type TeamMember } from '../discord/components';
 import { renderResultCard, renderTeamsBoard, renderTeamsPlaceholder, type TeamsView } from '../render/teams-message';
 
@@ -65,7 +65,7 @@ export async function publishTeams(api: Sender, repo: Repo, game: Game, now: num
   if (state.view.alpha.length === 0 || state.view.beta.length === 0) return false;
   await repo.lockTeams(game.id, now);
   if (game.teamsMsgId) {
-    await editBoard(api, game.chatId, game.teamsMsgId, renderTeamsBoard(state.view), teamsBoardComponents(game.id));
+    await editCard(api, game.chatId, game.teamsMsgId, renderTeamsBoard(state.view), teamsBoardComponents(game.id));
   }
   return true;
 }
@@ -87,7 +87,7 @@ export async function recordResult(
   const slot = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
   const dayLabel = slot ? formatDay(slot.kickoffAt) : '';
   // The card carries an admin-only "⚽ Golos & assists" button (when the feature is on).
-  await sendBoard(
+  await sendCard(
     api,
     game.chatId,
     renderResultCard(state.view, goalsA, goalsB, dayLabel),

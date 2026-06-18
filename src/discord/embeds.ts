@@ -18,10 +18,19 @@ export const COLORS = {
   payment: 0xf1c40f, // gold — pagamentos
 } as const;
 
+/** One embed field (a small titled box). `inline` lets Discord place up to ~3 side by side. */
+export interface EmbedField {
+  name: string;
+  value: string;
+  inline?: boolean;
+}
+
 export interface Embed {
   color: number;
   title?: string;
   description?: string;
+  fields?: EmbedField[];
+  footer?: { text: string };
 }
 
 /**
@@ -36,5 +45,27 @@ export function boardEmbed(text: string, color: number = FUTBOL_GREEN): Embed {
   const e: Embed = { color };
   if (title) e.title = title.slice(0, 256);
   if (description) e.description = description.slice(0, 4096);
+  return e;
+}
+
+/**
+ * Build a structured card: title + optional description + inline fields + footer. Use this
+ * (vs boardEmbed) when a board wants columns — e.g. Alpha | Beta teams side by side. Footers
+ * render as small grey text and do NOT interpret markdown, so strip it before passing.
+ */
+export function cardEmbed(o: {
+  title?: string;
+  description?: string;
+  fields?: EmbedField[];
+  footer?: string;
+  color?: number;
+}): Embed {
+  const e: Embed = { color: o.color ?? FUTBOL_GREEN };
+  if (o.title) e.title = o.title.replace(/\*\*/g, '').trim().slice(0, 256);
+  if (o.description) e.description = o.description.slice(0, 4096);
+  if (o.fields?.length) {
+    e.fields = o.fields.map((f) => ({ name: f.name.slice(0, 256), value: f.value.slice(0, 1024), inline: f.inline }));
+  }
+  if (o.footer) e.footer = { text: o.footer.slice(0, 2048) };
   return e;
 }
