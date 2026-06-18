@@ -3,6 +3,7 @@
 // layer wraps these in an embed and attaches the buttons/menus.
 import { M } from '../messages';
 import { esc } from '../util';
+import { cardEmbed, type Embed, type EmbedField } from '../discord/embeds';
 
 export interface TeamMember {
   tgUserId: string;
@@ -16,6 +17,9 @@ export interface TeamsView {
 
 const list = (items: { displayName: string }[]): string =>
   items.length === 0 ? M.teams.empty : items.map((p) => `• ${esc(p.displayName)}`).join('\n');
+
+/** Strip inline markdown so it isn't shown literally in an embed footer (footers are plain text). */
+const plain = (s: string): string => s.replace(/[*`_~]/g, '');
 
 function buckets(v: TeamsView): string[] {
   const parts = [M.teams.alpha(v.alpha.length), list(v.alpha), '', M.teams.beta(v.beta.length), list(v.beta)];
@@ -33,26 +37,26 @@ export function renderTeamsPanel(v: TeamsView): string {
   return [M.teams.panelTitle, M.teams.panelHint, '', ...buckets(v)].join('\n');
 }
 
-/** The published public board — everyone sees the teams. */
-export function renderTeamsBoard(v: TeamsView): string {
-  return [M.teams.boardTitle, '', ...buckets(v), '', M.teams.publishedHint].join('\n');
+/** The published public board — Alpha | Beta as side-by-side inline fields; "de fora" full-width. */
+export function renderTeamsBoard(v: TeamsView): Embed {
+  const fields: EmbedField[] = [
+    { name: M.teams.alpha(v.alpha.length), value: list(v.alpha), inline: true },
+    { name: M.teams.beta(v.beta.length), value: list(v.beta), inline: true },
+  ];
+  if (v.out.length > 0) fields.push({ name: M.teams.out(v.out.length), value: list(v.out) });
+  return cardEmbed({ title: M.teams.boardTitle, fields, footer: plain(M.teams.publishedHint) });
 }
 
-/** The post-game result card (score + winner + the two line-ups). `dayLabel` dates the title. */
-export function renderResultCard(v: TeamsView, goalsA: number, goalsB: number, dayLabel = ''): string {
+/** The post-game result card: score + winner in the body, the two line-ups as inline fields. */
+export function renderResultCard(v: TeamsView, goalsA: number, goalsB: number, dayLabel = ''): Embed {
   const winner = goalsA > goalsB ? M.result.winAlpha : goalsA < goalsB ? M.result.winBeta : M.result.draw;
-  return [
-    M.result.cardTitle(dayLabel),
-    '',
-    M.result.score(goalsA, goalsB),
-    winner,
-    '',
-    M.teams.alpha(v.alpha.length),
-    list(v.alpha),
-    '',
-    M.teams.beta(v.beta.length),
-    list(v.beta),
-    '',
-    M.result.footer,
-  ].join('\n');
+  return cardEmbed({
+    title: M.result.cardTitle(dayLabel),
+    description: [M.result.score(goalsA, goalsB), winner].join('\n'),
+    fields: [
+      { name: M.teams.alpha(v.alpha.length), value: list(v.alpha), inline: true },
+      { name: M.teams.beta(v.beta.length), value: list(v.beta), inline: true },
+    ],
+    footer: plain(M.result.footer),
+  });
 }

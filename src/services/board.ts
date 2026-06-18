@@ -5,7 +5,7 @@
 //   • opts.content → any real ping text (@everyone), which must live in content, never the
 //                    embed (mentions inside an embed never notify).
 import type { Sender } from '../discord/rest';
-import { boardEmbed } from '../discord/embeds';
+import { boardEmbed, type Embed } from '../discord/embeds';
 
 /** Post a board; returns the new message id. */
 export async function sendBoard(
@@ -38,4 +38,26 @@ export async function editBoard(
 /** Strip the buttons off a message, leaving its text/embed untouched. */
 export async function removeKeyboard(api: Sender, chatId: string, msgId: string): Promise<void> {
   await api.edit(chatId, msgId, { components: [] });
+}
+
+// ---- structured cards (embeds with fields, e.g. Alpha | Beta side by side) ----
+/** Post a pre-built card embed (see embeds.cardEmbed). Returns the new message id. */
+export async function sendCard(
+  api: Sender,
+  chatId: string,
+  embed: Embed,
+  components?: unknown[],
+  opts?: { content?: string; allowedMentions?: ('users' | 'everyone')[] },
+): Promise<string> {
+  return api.send(chatId, {
+    content: opts?.content,
+    embeds: [embed],
+    components: components ?? [],
+    allowedMentions: opts?.allowedMentions,
+  });
+}
+
+/** Edit a message to a pre-built card embed in place, clearing any leftover ping content. */
+export async function editCard(api: Sender, chatId: string, msgId: string, embed: Embed, components?: unknown[]): Promise<void> {
+  await api.edit(chatId, msgId, { content: '', embeds: [embed], components: components ?? [] });
 }
