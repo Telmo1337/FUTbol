@@ -21,7 +21,8 @@ import {
   tieComponents,
   voteComponents,
 } from '../discord/components';
-import { boardEmbed, COLORS } from '../discord/embeds';
+import { COLORS } from '../discord/embeds';
+import { editBoard, removeKeyboard, sendBoard } from './board';
 
 const MAX_PING = 15;
 
@@ -35,33 +36,6 @@ async function send(
   allowedMentions?: ('users' | 'everyone')[],
 ): Promise<string> {
   return api.send(chatId, { content: text, components: components ?? [], allowedMentions });
-}
-
-/** Post a board as a green embed. `opts.content` carries any real ping text (e.g. @everyone),
- *  because mentions inside an embed never notify. Returns the new message id. */
-async function sendBoard(
-  api: Sender,
-  chatId: string,
-  text: string,
-  components?: unknown[],
-  opts?: { content?: string; allowedMentions?: ('users' | 'everyone')[]; color?: number },
-): Promise<string> {
-  return api.send(chatId, {
-    content: opts?.content,
-    embeds: [boardEmbed(text, opts?.color)],
-    components: components ?? [],
-    allowedMentions: opts?.allowedMentions,
-  });
-}
-
-/** Edit a board's embed (and buttons) in place, clearing any leftover ping content. */
-async function editBoard(api: Sender, chatId: string, msgId: string, text: string, components?: unknown[], color?: number) {
-  await api.edit(chatId, msgId, { content: '', embeds: [boardEmbed(text, color)], components: components ?? [] });
-}
-
-/** Strip the buttons off a message, leaving its text/embed untouched. */
-async function removeKeyboard(api: Sender, chatId: string, msgId: string) {
-  await api.edit(chatId, msgId, { components: [] });
 }
 
 // Present (checked-in, incl. subs) vs the confirmed squad who are still absent.

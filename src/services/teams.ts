@@ -6,7 +6,7 @@ import type { Repo } from '../db/repo';
 import type { Game, ResultSide } from '../types';
 import { splitSquad } from '../core/rsvp';
 import { formatDay } from '../core/time';
-import { boardEmbed } from '../discord/embeds';
+import { editBoard, sendBoard } from './board';
 import { captureBoardComponents, teamsBoardComponents, teamsPlaceholderComponents, type TeamMember } from '../discord/components';
 import { renderResultCard, renderTeamsBoard, renderTeamsPlaceholder, type TeamsView } from '../render/teams-message';
 
@@ -16,13 +16,6 @@ export interface TeamsState {
   aIds: Set<string>;
   bIds: Set<string>;
   view: TeamsView; // alpha / beta / out, for rendering
-}
-
-async function sendBoard(api: Sender, chatId: string, text: string, components?: unknown[]): Promise<string> {
-  return api.send(chatId, { embeds: [boardEmbed(text)], components: components ?? [] });
-}
-async function editBoard(api: Sender, chatId: string, msgId: string, text: string, components?: unknown[]) {
-  await api.edit(chatId, msgId, { content: '', embeds: [boardEmbed(text)], components: components ?? [] });
 }
 
 /** Read the confirmed squad + current team assignment for a game. */

@@ -6,7 +6,8 @@ import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
 import type { Game } from '../types';
 import { splitSquad } from '../core/rsvp';
-import { boardEmbed, COLORS } from '../discord/embeds';
+import { COLORS } from '../discord/embeds';
+import { editBoard, removeKeyboard, sendBoard } from './board';
 import { paymentBoardComponents, type TeamMember } from '../discord/components';
 import { renderPaymentBoard } from '../render/payment-message';
 
@@ -15,13 +16,6 @@ export interface PaymentState {
   paid: Set<string>; // tgUserId of everyone marked as paid
   priceCents: number | null; // per-person price, or null until the admin sets it
   kickoffAt: number | null; // for dating the board title
-}
-
-async function sendBoard(api: Sender, chatId: string, text: string, components?: unknown[]): Promise<string> {
-  return api.send(chatId, { embeds: [boardEmbed(text, COLORS.payment)], components: components ?? [] });
-}
-async function editBoard(api: Sender, chatId: string, msgId: string, text: string, components?: unknown[]) {
-  await api.edit(chatId, msgId, { content: '', embeds: [boardEmbed(text, COLORS.payment)], components: components ?? [] });
 }
 
 /** Read the confirmed squad + who has paid + the current price for a game. */
@@ -47,9 +41,11 @@ export async function setPaidSet(repo: Repo, game: Game, ids: string[], now: num
 
 /** Post (or re-post) the public payment board — bumps it to the bottom and stores its id. */
 export async function postPaymentBoard(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
-  if (game.paymentMsgId) await api.edit(game.chatId, game.paymentMsgId, { components: [] });
+  if (game.paymentMsgId) await removeKeyboard(api, game.chatId, game.paymentMsgId);
   const state = await loadPaymentState(repo, game);
-  const msgId = await sendBoard(api, game.chatId, renderPaymentBoard(state), paymentBoardComponents(game.id));
+  const msgId = await sendBoard(api, game.chatId, renderPaymentBoard(state), paymentBoardComponents(game.id), {
+    color: COLORS.payment,
+  });
   await repo.setPaymentMsg(game.id, msgId, now);
 }
 
@@ -57,5 +53,5 @@ export async function postPaymentBoard(api: Sender, repo: Repo, game: Game, now:
 export async function refreshPaymentBoard(api: Sender, repo: Repo, game: Game): Promise<void> {
   if (!game.paymentMsgId) return;
   const state = await loadPaymentState(repo, game);
-  await editBoard(api, game.chatId, game.paymentMsgId, renderPaymentBoard(state), paymentBoardComponents(game.id));
+  await editBoard(api, game.chatId, game.paymentMsgId, renderPaymentBoard(state), paymentBoardComponents(game.id), COLORS.payment);
 }
