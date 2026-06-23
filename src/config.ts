@@ -58,10 +58,17 @@ export const NONRESP_PING_BEFORE_CLOSE_MS = 12 * HOUR;
 
 /**
  * How we ping the group at the "come and vote" moment (a new game opens).
- * The server is football-only, so @everyone == exactly the group. Switch to a
- * role mention (e.g. '<@&ROLE_ID>') here if you ever add non-players to the server.
+ * Preferred: mention the "Jogador" role — set GROUP_ROLE_ID to its id AND mark the role
+ * "Allow anyone to @mention this role" in Discord. That notifies the group WITHOUT needing
+ * the bot's MENTION_EVERYONE permission (which kept getting toggled off on @everyone).
+ * If GROUP_ROLE_ID is left empty we fall back to @everyone, which only pings when the bot's
+ * role has MENTION_EVERYONE in the channel. GROUP_PING_MENTIONS stays in sync with the choice.
  */
-export const GROUP_PING = '@everyone';
+export const GROUP_ROLE_ID = '1516463611856556297'; // cargo "Jogador" (mencionável por todos)
+export const GROUP_PING = GROUP_ROLE_ID ? `<@&${GROUP_ROLE_ID}>` : '@everyone';
+export const GROUP_PING_MENTIONS: ('users' | 'everyone' | 'roles')[] = GROUP_ROLE_ID
+  ? ['users', 'roles']
+  : ['users', 'everyone'];
 
 export const GAME_STATUSES_ACTIVE = ['VOTING', 'TIEBREAK', 'RSVP_OPEN', 'LOCKED', 'CHECKIN_OPEN'] as const;
 
@@ -78,10 +85,15 @@ export const FIRESTORE_BASE =
 export const FIELD_CLUB_ID = '5QkuPXdvkISXwFZQyMlB';
 export const FIELD_ID = 'Ia79UGKogA7oNBxp9PNS';
 
-/** When the weekly auto-game fires (Lisbon wall-clock; weekday 1=Mon..7=Sun). */
-export const WEEKLY_TRIGGER_DOW = 6; // Saturday
-export const WEEKLY_TRIGGER_HOUR = 22; // fires from 22:00 on Saturday night; dedup keeps it to 1
-/** Free-slot search window. 8 days so a Saturday-night fire still reaches NEXT Saturday. */
+/**
+ * The auto-game is event-driven: the cron opens the next vote as soon as no game is in
+ * progress (the previous one was played or cancelled), giving the group the most heads-up.
+ * These bound WHEN that's allowed to happen — all Lisbon wall-clock.
+ */
+export const AUTO_OPEN_START_HOUR = 9; // don't open before 09:00 (so a late game doesn't ping at 3am)...
+export const AUTO_OPEN_END_HOUR = 23; // ...nor at/after 23:00
+export const AUTO_OPEN_COOLDOWN_MS = 12 * HOUR; // and never another within 12h of the last one
+/** Free-slot search window. 8 days always reaches at least the coming week from any weekday. */
 export const AVAIL_DAYS_AHEAD = 8;
 export const AVAIL_SLOT_MIN = 60;
 export const AVAIL_STEP_MIN = 60;

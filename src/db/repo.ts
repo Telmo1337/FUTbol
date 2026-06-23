@@ -88,6 +88,17 @@ export function createRepo(d1: D1Database) {
       return row ?? null;
     },
 
+    /** When the most recent game in a chat was created (any status) — for the auto-open cooldown. */
+    async getLastGameCreatedAt(chatId: string): Promise<number | null> {
+      const row = await db
+        .select({ createdAt: games.createdAt })
+        .from(games)
+        .where(eq(games.chatId, chatId))
+        .orderBy(desc(games.id))
+        .get();
+      return row?.createdAt ?? null;
+    },
+
     /** Most recent game in a chat whose squad is frozen (LOCKED onward) — for 💶 /pagamentos. */
     async getLatestSquadGame(chatId: string): Promise<Game | null> {
       const row = await db

@@ -13,10 +13,11 @@ export interface OutMessage {
   embeds?: unknown[];
   /**
    * Which mention kinds Discord is allowed to resolve into real pings for THIS message.
-   * Defaults to user mentions only. The "come and vote" message opts into `'everyone'`;
-   * nothing else can ping the whole server even if its text somehow contained @everyone.
+   * Defaults to user mentions only. The "come and vote" message opts into `'roles'` (the
+   * Jogador role) or `'everyone'`; nothing else can ping the whole server even if its text
+   * somehow contained @everyone or a role mention.
    */
-  allowedMentions?: ('users' | 'everyone')[];
+  allowedMentions?: ('users' | 'everyone' | 'roles')[];
 }
 
 /** The send/edit surface the engine needs. Real impl below; fake one in the selftest. */
