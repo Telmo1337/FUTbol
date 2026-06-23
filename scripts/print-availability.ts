@@ -5,7 +5,7 @@
 //   npm run print:avail
 import { createFieldClient, loadFreeSlots } from '../src/services/field';
 import { lisbonParts } from '../src/core/time';
-import { isWeeklyTriggerWindow } from '../src/services/weekly';
+import { isAutoOpenHour } from '../src/services/weekly';
 import { AVAIL_DAYS_AHEAD, FIELD_DAY_OF_SUNDAY } from '../src/config';
 
 const DOW = ['—', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']; // index by ISO 1..7
@@ -36,4 +36,4 @@ for (const s of free) {
   console.log(`  ${DOW[p.weekday]}  ${s.label}`);
 }
 
-console.log(`\nisWeeklyTriggerWindow(now) = ${isWeeklyTriggerWindow(now)} (true only Sun 18:xx Lisbon)`);
+console.log(`\nisAutoOpenHour(now) = ${isAutoOpenHour(now)} (true only between 09:00 and 23:00 Lisbon)`);

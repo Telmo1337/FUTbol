@@ -5,7 +5,7 @@ import type { Repo } from '../db/repo';
 import type { Game, RsvpStatus, Slot } from '../types';
 import { M } from '../messages';
 import { esc, mention } from '../util';
-import { CHECKIN_WINDOW_MS, GROUP_PING, RSVP_CLOSE_BEFORE_KICKOFF_MS } from '../config';
+import { CHECKIN_WINDOW_MS, GROUP_PING, GROUP_PING_MENTIONS, RSVP_CLOSE_BEFORE_KICKOFF_MS } from '../config';
 import { countVoters, pickWinner, tallyVotes } from '../core/voting';
 import { confirmedIds, splitSquad } from '../core/rsvp';
 import { dueNudges } from '../core/nudges';
@@ -33,7 +33,7 @@ async function send(
   chatId: string,
   text: string,
   components?: unknown[],
-  allowedMentions?: ('users' | 'everyone')[],
+  allowedMentions?: ('users' | 'everyone' | 'roles')[],
 ): Promise<string> {
   return api.send(chatId, { content: text, components: components ?? [], allowedMentions });
 }
@@ -83,12 +83,12 @@ export async function createGame(
     input.slots.map((s, i) => ({ kickoffAt: s.kickoffAt, label: s.label, sortOrder: i })),
   );
   const slots = await repo.getSlots(gameId);
-  // Ping the group once, only at "come and vote". The @everyone goes in `content` (it must,
+  // Ping the group once, only at "come and vote". The mention goes in `content` (it must,
   // to actually notify — a mention inside the embed wouldn't); the board is the embed.
   const board = renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0, new Map());
   const msgId = await sendBoard(api, input.chatId, board, voteComponents(gameId, slots), {
     content: GROUP_PING,
-    allowedMentions: ['users', 'everyone'],
+    allowedMentions: GROUP_PING_MENTIONS,
     color: COLORS.vote,
   });
   await repo.setVoteMsg(gameId, msgId, input.now);

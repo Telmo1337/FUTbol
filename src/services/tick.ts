@@ -5,7 +5,7 @@ import type { Repo } from '../db/repo';
 import type { FieldClient } from './field';
 import { isCheckinExpired, isRsvpExpired, isVotingExpired } from '../core/lifecycle';
 import * as games from './games';
-import { maybeCreateWeeklyGame, type WeeklyConfig } from './weekly';
+import { maybeOpenNextGame, type WeeklyConfig } from './weekly';
 
 export async function runTick(
   api: Sender,
@@ -34,6 +34,6 @@ export async function runTick(
     }
   }
 
-  // Once a week (Sunday 18:00 Lisbon) open the auto-game from the field's free slots.
-  await maybeCreateWeeklyGame(api, repo, field, weekly, now);
+  // Event-driven: open the next game as soon as none is in progress (within daytime hours).
+  await maybeOpenNextGame(api, repo, field, weekly, now);
 }

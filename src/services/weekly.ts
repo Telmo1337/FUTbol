@@ -1,6 +1,8 @@
-// The Sunday-18:00 auto-game: once a week the cron opens a vote with the field's free
-// slots, so the group never has to run /novojogo by hand. Pure wiring — slot math lives
-// in core/availability.ts, the Firestore reads in services/field.ts.
+// The event-driven auto-game: as soon as no game is in progress in the channel — i.e. the
+// previous one was just played (PLAYED) or fell through for lack of players (CANCELLED) — the
+// cron opens the next vote with the field's free slots, so the group never has to run
+// /novojogo by hand and always gets the maximum heads-up. Pure wiring — slot math lives in
+// core/availability.ts, the Firestore reads in services/field.ts.
 import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
 import type { FieldClient } from './field';
@@ -8,12 +10,13 @@ import { loadFreeSlots } from './field';
 import * as games from './games';
 import { lisbonParts } from '../core/time';
 import {
+  AUTO_OPEN_COOLDOWN_MS,
+  AUTO_OPEN_END_HOUR,
+  AUTO_OPEN_START_HOUR,
   DEFAULT_CAP_PLAYERS,
   DEFAULT_MIN_PLAYERS,
   VOTE_LEAD_BEFORE_EARLIEST_MS,
   WEEKLY_LOCATION_NOTE,
-  WEEKLY_TRIGGER_DOW,
-  WEEKLY_TRIGGER_HOUR,
 } from '../config';
 
 const HOUR_MS = 3_600_000;
@@ -26,16 +29,15 @@ export interface WeeklyConfig {
 }
 
 /**
- * True from 22:00 onward on Saturday (Lisbon). Matching the whole evening (any minute ≥22h),
- * not a single minute, means a skipped/retried tick still fires; the getCurrentGame guard
- * below makes sure only the first qualifying tick actually creates a game.
+ * Daytime guard: only auto-open between AUTO_OPEN_START_HOUR and AUTO_OPEN_END_HOUR (Lisbon),
+ * so a game that finishes late at night doesn't ping the group at 3am — it waits for the morning.
  */
-export function isWeeklyTriggerWindow(now: number): boolean {
+export function isAutoOpenHour(now: number): boolean {
   const p = lisbonParts(now);
-  return p.weekday === WEEKLY_TRIGGER_DOW && p.hour >= WEEKLY_TRIGGER_HOUR;
+  return p.hour >= AUTO_OPEN_START_HOUR && p.hour < AUTO_OPEN_END_HOUR;
 }
 
-export async function maybeCreateWeeklyGame(
+export async function maybeOpenNextGame(
   api: Sender,
   repo: Repo,
   client: FieldClient,
@@ -43,13 +45,15 @@ export async function maybeCreateWeeklyGame(
   now: number,
 ): Promise<void> {
   if (!cfg.channelId) return; // feature not configured → off
-  if (!isWeeklyTriggerWindow(now)) return;
-  if (await repo.getCurrentGame(cfg.channelId)) return; // a game is already live → dedup
+  if (!isAutoOpenHour(now)) return; // outside daytime → hold until the morning
+  if (await repo.getCurrentGame(cfg.channelId)) return; // a game is still in progress → dedup
+  const lastAt = await repo.getLastGameCreatedAt(cfg.channelId);
+  if (lastAt != null && now - lastAt < AUTO_OPEN_COOLDOWN_MS) return; // opened one recently → cool down
 
   try {
     const slots = await loadFreeSlots(client, { now }); // sorted ascending, capped
     if (slots.length < 2) {
-      console.log('[weekly] skip — only', slots.length, 'free slot(s) this week');
+      console.log('[auto] skip — only', slots.length, 'free slot(s) ahead');
       return;
     }
     // Same default as /novojogo: deadline 6h before the earliest slot, clamped to the future.
@@ -66,8 +70,8 @@ export async function maybeCreateWeeklyGame(
       slots,
       now,
     });
-    console.log('[weekly] opened auto-game with', slots.length, 'slots in', cfg.channelId);
+    console.log('[auto] opened next game with', slots.length, 'slots in', cfg.channelId);
   } catch (e) {
-    console.error('[weekly]', e); // never let a Firestore/Discord hiccup break the tick
+    console.error('[auto]', e); // never let a Firestore/Discord hiccup break the tick
   }
 }

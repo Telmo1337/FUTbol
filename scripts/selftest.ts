@@ -12,7 +12,7 @@ import { pickWinner, tallyVotes } from '../src/core/voting';
 import { renderVoteMessage } from '../src/render/vote-message';
 import { parseDateTime, formatWhen, formatDay, discordTs, lisbonToUtc, lisbonParts, monthWindow, formatMonth } from '../src/core/time';
 import { computeFreeSlots } from '../src/core/availability';
-import { isWeeklyTriggerWindow, maybeCreateWeeklyGame } from '../src/services/weekly';
+import { isAutoOpenHour, maybeOpenNextGame } from '../src/services/weekly';
 import type { FieldClient } from '../src/services/field';
 import { loadStats } from '../src/services/stats';
 import {
@@ -584,7 +584,7 @@ check('render: best-streak & early-bird boards present', groupRender.includes('M
 const emptyMonth = computeStats(monthInput, { since: lisbonToUtc(2027, 1, 1, 0, 0), until: lisbonToUtc(2027, 2, 1, 0, 0) });
 check('render: empty month shows the gentle fallback', emptyMonth.totalGames === 0 && renderStats(allTime, emptyMonth, 'janeiro', null).includes('ainda sem jogos este mês'));
 
-// --- weekly auto-game (Sunday 18:00) with a fake FieldClient — stays offline ---
+// --- event-driven auto-game with a fake FieldClient — stays offline ---
 const fakeField: FieldClient = {
   async fetchWorkingHours() {
     return { workingHours: [{ day: 1, start: '18:00', end: '21:00' }], blocked: [] }; // Mon 18/19/20
@@ -601,35 +601,46 @@ const emptyField: FieldClient = {
     return [];
   },
 };
-const satNow = lisbonToUtc(2026, 6, 20, 22, 0); // Sat 2026-06-20 22:00 Lisbon
-check('weekly: trigger window true on Sat 22:00 Lisbon', isWeeklyTriggerWindow(satNow));
-check('weekly: trigger window false on Sat 21:00 (before 22h)', !isWeeklyTriggerWindow(lisbonToUtc(2026, 6, 20, 21, 0)));
-check('weekly: trigger window false on Sun 22:00 (wrong day)', !isWeeklyTriggerWindow(lisbonToUtc(2026, 6, 21, 22, 0)));
+const dayNow = lisbonToUtc(2026, 6, 16, 18, 0); // Tue 2026-06-16 18:00 Lisbon — a daytime hour
+check('auto: open hour true at 18:00 on a weekday', isAutoOpenHour(dayNow));
+check('auto: open hour false at 03:00 (too early)', !isAutoOpenHour(lisbonToUtc(2026, 6, 16, 3, 0)));
+check('auto: open hour false at 23:00 (too late)', !isAutoOpenHour(lisbonToUtc(2026, 6, 16, 23, 0)));
 
-const wChat = `weekly-${Date.now()}`;
-await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, satNow);
+const wChat = `auto-${Date.now()}`;
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, dayNow);
 const wGame = await repo.getCurrentGame(wChat);
-check('weekly: auto-game created in VOTING', !!wGame && wGame.status === 'VOTING');
-check('weekly: created with the field free slots', wGame != null && (await repo.getSlots(wGame.id)).length === 3);
+check('auto: next game opened in VOTING', !!wGame && wGame.status === 'VOTING');
+check('auto: created with the field free slots', wGame != null && (await repo.getSlots(wGame.id)).length === 3);
 
 const sentBeforeW = sent.length;
-await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, satNow + 60_000);
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, dayNow + 60_000);
 check(
-  'weekly: a second tick in the hour does not duplicate',
+  'auto: a second tick while a game is in progress does not duplicate',
   sent.length === sentBeforeW && (await repo.getActiveGames()).filter((g) => g.chatId === wChat).length === 1,
 );
 
-const wChatEmpty = `weekly-empty-${Date.now()}`;
+const wChatEmpty = `auto-empty-${Date.now()}`;
 const sentBeforeE = sent.length;
-await maybeCreateWeeklyGame(sender, repo, emptyField, { channelId: wChatEmpty, createdBy: '1' }, satNow);
+await maybeOpenNextGame(sender, repo, emptyField, { channelId: wChatEmpty, createdBy: '1' }, dayNow);
 check(
-  'weekly: no free slots → no game and no message',
+  'auto: no free slots → no game and no message',
   (await repo.getCurrentGame(wChatEmpty)) === null && sent.length === sentBeforeE,
 );
 
-const wChatMon = `weekly-mon-${Date.now()}`;
-await maybeCreateWeeklyGame(sender, repo, fakeField, { channelId: wChatMon, createdBy: '1' }, lisbonToUtc(2026, 6, 15, 18, 0));
-check('weekly: wrong day → no game created', (await repo.getCurrentGame(wChatMon)) === null);
+const wChatNight = `auto-night-${Date.now()}`;
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChatNight, createdBy: '1' }, lisbonToUtc(2026, 6, 16, 3, 0));
+check('auto: off-hours → no game created', (await repo.getCurrentGame(wChatNight)) === null);
+
+// Event-driven: once the previous game ends (PLAYED), the next one opens — but the cooldown
+// stops it reopening immediately, then lets it through once enough time has passed.
+await repo.setStatus(wGame!.id, 'PLAYED', dayNow);
+check('auto: previous game no longer active after PLAYED', (await repo.getCurrentGame(wChat)) === null);
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, dayNow + 60_000);
+check('auto: cooldown blocks reopening right after the last game', (await repo.getCurrentGame(wChat)) === null);
+const nextDay = lisbonToUtc(2026, 6, 17, 10, 0); // Wed 10:00 — 16h later, past the cooldown, daytime
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChat, createdBy: '1' }, nextDay);
+const wGame2 = await repo.getCurrentGame(wChat);
+check('auto: after the cooldown, the next game opens', !!wGame2 && wGame2.status === 'VOTING');
 
 console.log(`\n${failures === 0 ? '🎉 All checks passed' : `💥 ${failures} check(s) failed`}`);
 await proxy.dispose();

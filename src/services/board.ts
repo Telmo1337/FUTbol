@@ -13,7 +13,7 @@ export async function sendBoard(
   chatId: string,
   text: string,
   components?: unknown[],
-  opts?: { content?: string; allowedMentions?: ('users' | 'everyone')[]; color?: number },
+  opts?: { content?: string; allowedMentions?: ('users' | 'everyone' | 'roles')[]; color?: number },
 ): Promise<string> {
   return api.send(chatId, {
     content: opts?.content,
@@ -47,7 +47,7 @@ export async function sendCard(
   chatId: string,
   embed: Embed,
   components?: unknown[],
-  opts?: { content?: string; allowedMentions?: ('users' | 'everyone')[] },
+  opts?: { content?: string; allowedMentions?: ('users' | 'everyone' | 'roles')[] },
 ): Promise<string> {
   return api.send(chatId, {
     content: opts?.content,
