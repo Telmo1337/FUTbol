@@ -1,0 +1,19 @@
+title = "FUTbol gitleaks config"
+
+# Estende as regras default do gitleaks e adiciona uma allowlist para os valores que sao
+# publicos por design (ver docs/security.md). Os segredos reais (DISCORD_BOT_TOKEN, etc.)
+# vivem so em `wrangler secret put` e nunca no repositorio.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Valores publicos por design que nao devem ser marcados como fuga"
+# Firebase web API key do field.pt: publica por design (Firestore com leitura publica),
+# documentada como nao-secreta em src/config.ts.
+regexes = [
+  '''AIzaSyAsdBrcNAvRvDWj-aEyWr6twLwgNTb71OY''',
+]
+# O ficheiro de exemplo so tem nomes de variaveis, sem valores.
+paths = [
+  '''\.dev\.vars\.example$''',
+]
