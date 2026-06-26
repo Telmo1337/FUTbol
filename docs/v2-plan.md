@@ -1,5 +1,10 @@
 # v2 — Fun Stats (build plan)
 
+> Documento histórico. Descreve o plano de construção da v2 (estatísticas), mantido como
+> registo de como a feature foi pensada. A descrição viva das métricas está em
+> [system-design.md](system-design.md). Os emojis do original foram removidos; o conteúdo
+> mantém-se.
+
 Status: **in progress** on `develop`. v1 (the weekly loop) is shipped on `main`.
 
 ## Goal
@@ -13,23 +18,23 @@ deferred to v3.
 We slot a `CHECKIN_OPEN` state between `LOCKED` and `PLAYED`:
 
 ```
-LOCKED ──kickoff────────▶ CHECKIN_OPEN   ← bot posts a "Cheguei ✅" board, pings the squad
-CHECKIN_OPEN ──+5h──────▶ PLAYED          ← ghosts assigned, recap auto-posts
+LOCKED ──kickoff──────────> CHECKIN_OPEN   (bot posts a "Cheguei" board, pings the squad)
+CHECKIN_OPEN ──+5h────────> PLAYED         (ghosts assigned, recap auto-posts)
 ```
 
 - Tapping **Cheguei** = present. A `checkins` row is written.
-- A confirmed-squad player with **no** check-in by +5h = 👻 ghost.
+- A confirmed-squad player with **no** check-in by +5h = ghost.
 - Subs (waitlist) can tap too and earn an appearance.
 - The admin can **clear a false ghost** from the recap (tap-to-clear) — writes a
   `source='admin'` check-in. This fixes "played but forgot to tap".
 
 ## Stat definitions
 
-- **👟 Appearances** = PLAYED games where you have a check-in (confirmed *or* sub).
-- **🏅 Reliability** = check-ins ÷ games you were in the confirmed squad for.
-  Ranked only at **≥3 confirmed games** (below = "a aquecer 🔥").
-- **👻 Ghost** = confirmed squad but no check-in.
-- **🔥 Streak** = consecutive most-recent PLAYED games you showed up to; missing one
+- **Appearances** = PLAYED games where you have a check-in (confirmed *or* sub).
+- **Reliability** = check-ins ÷ games you were in the confirmed squad for.
+  Ranked only at **>=3 confirmed games** (below = "a aquecer").
+- **Ghost** = confirmed squad but no check-in.
+- **Streak** = consecutive most-recent PLAYED games you showed up to; missing one
   (ghost *or* honest "Não vou") resets to 0. `/eu` also shows your best streak.
 - All-time, per group chat.
 
@@ -56,10 +61,10 @@ CHECKIN_OPEN ──+5h──────▶ PLAYED          ← ghosts assigned,
 
 ## Verify
 
-`npm run typecheck` + `npm run selftest` (extended to drive check-in → ghost →
-admin-clear → `/stats` → `/eu`). Same green-gate as v1; CI re-runs it.
+`npm run typecheck` + `npm run selftest` (extended to drive check-in -> ghost ->
+admin-clear -> `/stats` -> `/eu`). Same green-gate as v1; CI re-runs it.
 
 ## Go-live (after v2 is green)
 
-One guided pass: BotFather setup → register `/stats` `/eu` → Cloudflare deploy.
+One guided pass: BotFather setup -> register `/stats` `/eu` -> Cloudflare deploy.
 Then the first real game already collects attendance.
