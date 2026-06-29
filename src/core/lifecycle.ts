@@ -5,12 +5,12 @@
 //   RSVP_OPEN ──rsvp_close_at────────▶ LOCKED   (or CANCELLED if < min players)
 //   LOCKED ──kickoff_at──────────────▶ CHECKIN_OPEN  (bot posts the "Cheguei ✅" board)
 //   CHECKIN_OPEN ──checkin_close_at──▶ PLAYED         (ghosts assigned, recap posted)
-//   any (non-terminal) ──/cancelar───▶ CANCELLED
+//   any (non-terminal) ──/cancelar───▶ CANCELLED_ADMIN   (a deliberate stop; cron won't auto-reopen)
 //
 // E = event-driven (a tap or command). T = time-driven (the tick reads now vs deadlines).
 import type { Game, GameStatus } from '../types';
 
-export const TERMINAL_STATUSES: GameStatus[] = ['PLAYED', 'CANCELLED'];
+export const TERMINAL_STATUSES: GameStatus[] = ['PLAYED', 'CANCELLED', 'CANCELLED_ADMIN'];
 
 export function isVotingExpired(game: Game, now: number): boolean {
   return game.status === 'VOTING' && now >= game.voteDeadline;

@@ -69,6 +69,13 @@ export async function createGame(
     now: number;
   },
 ): Promise<void> {
+  // Final line of defence: never open a poll with fewer than 2 slots. The callers already guard,
+  // but a 0/1-slot game would be unvotable AND, because it counts as "active", would block every
+  // future auto-open via the dedup in maybeOpenNextGame. Refuse outright.
+  if (input.slots.length < 2) {
+    console.warn('[createGame] refused —', input.slots.length, 'slot(s)');
+    return;
+  }
   const gameId = await repo.createGame({
     chatId: input.chatId,
     createdBy: input.createdBy,
@@ -78,20 +85,28 @@ export async function createGame(
     voteDeadline: input.voteDeadline,
     now: input.now,
   });
-  await repo.addSlots(
-    gameId,
-    input.slots.map((s, i) => ({ kickoffAt: s.kickoffAt, label: s.label, sortOrder: i })),
-  );
-  const slots = await repo.getSlots(gameId);
-  // Ping the group once, only at "come and vote". The mention goes in `content` (it must,
-  // to actually notify — a mention inside the embed wouldn't); the board is the embed.
-  const board = renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0, new Map());
-  const msgId = await sendBoard(api, input.chatId, board, voteComponents(gameId, slots), {
-    content: GROUP_PING,
-    allowedMentions: GROUP_PING_MENTIONS,
-    color: COLORS.vote,
-  });
-  await repo.setVoteMsg(gameId, msgId, input.now);
+  try {
+    await repo.addSlots(
+      gameId,
+      input.slots.map((s, i) => ({ kickoffAt: s.kickoffAt, label: s.label, sortOrder: i })),
+    );
+    const slots = await repo.getSlots(gameId);
+    // Ping the group once, only at "come and vote". The mention goes in `content` (it must,
+    // to actually notify — a mention inside the embed wouldn't); the board is the embed.
+    const board = renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0, new Map());
+    const msgId = await sendBoard(api, input.chatId, board, voteComponents(gameId, slots), {
+      content: GROUP_PING,
+      allowedMentions: GROUP_PING_MENTIONS,
+      color: COLORS.vote,
+    });
+    await repo.setVoteMsg(gameId, msgId, input.now);
+  } catch (e) {
+    // A hiccup between the game insert and the posted board would otherwise leave a corrupt,
+    // slot-less / message-less game stuck in VOTING — unvotable, and blocking the auto-open
+    // forever. Roll the half-made game back so the next tick can cleanly retry.
+    await repo.deleteGame(gameId).catch(() => {});
+    throw e;
+  }
 }
 
 // ---------- voting ----------
@@ -300,9 +315,12 @@ export async function closeRsvp(api: Sender, repo: Repo, game: Game, now: number
   }
 }
 
+// Admin pressed /cancelar — a deliberate stop. We persist a DISTINCT terminal status
+// (CANCELLED_ADMIN, vs the plain CANCELLED of a too-few-players fall-through) so the cron's
+// auto-open knows NOT to reopen a poll behind the admin's back; the next game waits for /novojogo.
 export async function cancelGame(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
-  await repo.setStatus(game.id, 'CANCELLED', now);
-  if (game.rsvpMsgId) await rerenderRsvp(api, repo, { ...game, status: 'CANCELLED' }, 'cancelled');
+  await repo.setStatus(game.id, 'CANCELLED_ADMIN', now);
+  if (game.rsvpMsgId) await rerenderRsvp(api, repo, { ...game, status: 'CANCELLED_ADMIN' }, 'cancelled');
   else if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
   await send(api, game.chatId, M.cancelledByAdmin);
 }
@@ -311,6 +329,7 @@ export async function cancelGame(api: Sender, repo: Repo, game: Game, now: numbe
 export async function repost(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
   if (game.status === 'VOTING') {
     const slots = await repo.getSlots(game.id);
+    if (slots.length === 0) return; // corrupt/empty game — never repost an unvotable board
     const votes = await repo.getVotes(game.id);
     const named = await repo.getVotesWithNames(game.id);
     const text = renderVoteMessage(

@@ -55,7 +55,8 @@ export type GameStatus =
   | 'LOCKED' // RSVP closed, squad frozen
   | 'CHECKIN_OPEN' // kickoff passed, collecting "Cheguei ✅" until the window closes
   | 'PLAYED' // window closed, ghosts assigned, stats final
-  | 'CANCELLED';
+  | 'CANCELLED' // fell through (e.g. too few players) — the cron MAY auto-open the next game
+  | 'CANCELLED_ADMIN'; // admin pressed /cancelar — a deliberate stop; the cron will NOT auto-open
 
 export type RsvpStatus = 'IN' | 'OUT' | 'MAYBE';
 

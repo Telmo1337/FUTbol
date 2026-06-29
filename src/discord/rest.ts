@@ -2,6 +2,7 @@
 // The cron path and the interaction handlers both post/edit messages through this.
 // The selftest provides a fake Sender that records calls instead of hitting the API.
 import type { Env } from '../types';
+import { GROUP_ROLE_ID } from '../config';
 
 const API = 'https://discord.com/api/v10';
 
@@ -28,11 +29,18 @@ export interface Sender {
   edit(channelId: string, messageId: string, msg: OutMessage): Promise<void>;
 }
 
-// Per-message allow-list. We default to user mentions only; the group ping (@everyone)
-// is opt-in per message (see OutMessage.allowedMentions). User-provided text is also
-// defanged in util.esc(), so a name can never smuggle a real ping through either way.
+// Per-message allow-list. Default: user mentions only; the group ping is opt-in per message
+// (see OutMessage.allowedMentions). When the group ping is the Jogador role, we whitelist that
+// role id EXPLICITLY (roles:[id]) instead of a blanket parse:['roles']: same notification
+// behaviour, but scoped to exactly that role — it can never resolve a stray @everyone or some
+// other role smuggled into the text, and it stays safe even if the bot is later granted
+// MENTION_EVERYONE. User text is also defanged in util.esc(), so a name can't smuggle a ping either.
 function mentionsFor(msg: OutMessage) {
-  return { parse: msg.allowedMentions ?? ['users'] };
+  const kinds = msg.allowedMentions ?? ['users'];
+  if (GROUP_ROLE_ID && kinds.includes('roles')) {
+    return { parse: kinds.filter((k) => k !== 'roles'), roles: [GROUP_ROLE_ID] };
+  }
+  return { parse: kinds };
 }
 
 export function createSender(env: Env): Sender {

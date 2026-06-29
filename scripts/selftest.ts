@@ -642,6 +642,26 @@ await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChat, createdBy: 
 const wGame2 = await repo.getCurrentGame(wChat);
 check('auto: after the cooldown, the next game opens', !!wGame2 && wGame2.status === 'VOTING');
 
+// An admin's /cancelar is a hard stop: the cron must NOT auto-open a new poll behind their back,
+// even once the cooldown is long gone. (Too-few-players CANCELLED still reopens — that's above.)
+const wChatCancel = `auto-cancel-${Date.now()}`;
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChatCancel, createdBy: '1' }, dayNow);
+const cGame = (await repo.getCurrentGame(wChatCancel))!;
+await games.cancelGame(sender, repo, cGame, dayNow + 1000);
+check('cancel: /cancelar marks the game CANCELLED_ADMIN', (await repo.getGame(cGame.id))!.status === 'CANCELLED_ADMIN');
+const wellPastCooldown = lisbonToUtc(2026, 6, 18, 10, 0); // Thu 10:00 — a day later, daytime, cooldown gone
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChatCancel, createdBy: '1' }, wellPastCooldown);
+check('cancel: admin cancel suppresses auto-open even past the cooldown', (await repo.getCurrentGame(wChatCancel)) === null);
+
+// createGame refuses a sub-2-slot poll outright (final defence): it'd be unvotable and would
+// block the auto-open via dedup. No game row should be left behind.
+const wChatGuard = `guard-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: wChatGuard, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 3,
+  voteDeadline: dayNow + DAY, slots: [{ kickoffAt: dayNow + DAY, label: 'só um' }], now: dayNow,
+});
+check('createGame: refuses a < 2-slot poll (no game created)', (await repo.getCurrentGame(wChatGuard)) === null);
+
 console.log(`\n${failures === 0 ? '🎉 All checks passed' : `💥 ${failures} check(s) failed`}`);
 await proxy.dispose();
 if (failures > 0) throw new Error(`${failures} self-test check(s) failed`);
