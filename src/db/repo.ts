@@ -88,15 +88,15 @@ export function createRepo(d1: D1Database) {
       return row ?? null;
     },
 
-    /** When the most recent game in a chat was created (any status) — for the auto-open cooldown. */
-    async getLastGameCreatedAt(chatId: string): Promise<number | null> {
+    /** The most recent game in a chat (any status) — for the auto-open cooldown + admin-cancel guard. */
+    async getLastGame(chatId: string): Promise<Game | null> {
       const row = await db
-        .select({ createdAt: games.createdAt })
+        .select()
         .from(games)
         .where(eq(games.chatId, chatId))
         .orderBy(desc(games.id))
         .get();
-      return row?.createdAt ?? null;
+      return row ?? null;
     },
 
     /** Most recent game in a chat whose squad is frozen (LOCKED onward) — for 💶 /pagamentos. */
@@ -395,6 +395,21 @@ export function createRepo(d1: D1Database) {
       ]);
       await db.delete(games).where(inArray(games.id, ids)).run();
       return ids.length;
+    },
+
+    /** Hard-delete a single game and all its child rows. Used to roll back a half-created game. */
+    async deleteGame(id: number): Promise<void> {
+      await Promise.all([
+        db.delete(votes).where(eq(votes.gameId, id)).run(),
+        db.delete(rsvps).where(eq(rsvps.gameId, id)).run(),
+        db.delete(checkins).where(eq(checkins.gameId, id)).run(),
+        db.delete(resultTeams).where(eq(resultTeams.gameId, id)).run(),
+        db.delete(results).where(eq(results.gameId, id)).run(),
+        db.delete(gameEvents).where(eq(gameEvents.gameId, id)).run(),
+        db.delete(payments).where(eq(payments.gameId, id)).run(),
+        db.delete(candidateSlots).where(eq(candidateSlots.gameId, id)).run(),
+      ]);
+      await db.delete(games).where(eq(games.id, id)).run();
     },
 
     // ---------- stats (read-side, all-time per chat) ----------

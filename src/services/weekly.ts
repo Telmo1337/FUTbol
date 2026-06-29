@@ -47,8 +47,12 @@ export async function maybeOpenNextGame(
   if (!cfg.channelId) return; // feature not configured → off
   if (!isAutoOpenHour(now)) return; // outside daytime → hold until the morning
   if (await repo.getCurrentGame(cfg.channelId)) return; // a game is still in progress → dedup
-  const lastAt = await repo.getLastGameCreatedAt(cfg.channelId);
-  if (lastAt != null && now - lastAt < AUTO_OPEN_COOLDOWN_MS) return; // opened one recently → cool down
+  const last = await repo.getLastGame(cfg.channelId);
+  // An admin's explicit /cancelar is a deliberate "stop" — don't auto-reopen a poll behind their
+  // back. The next game then waits for a manual /novojogo. (A game that merely fell through for too
+  // few players stays plain CANCELLED and DOES auto-reopen, to give the group another shot.)
+  if (last?.status === 'CANCELLED_ADMIN') return;
+  if (last != null && now - last.createdAt < AUTO_OPEN_COOLDOWN_MS) return; // opened one recently → cool down
 
   try {
     const slots = await loadFreeSlots(client, { now }); // sorted ascending, capped
