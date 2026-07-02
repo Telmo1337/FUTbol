@@ -35,6 +35,6 @@ export default {
       channelId: env.GAME_CHANNEL_ID ?? '',
       createdBy: parseAdminIds(env.ADMIN_IDS).values().next().value ?? 'system',
     };
-    await runTick(sender, repo, Date.now(), field, weekly);
+    await runTick(sender, repo, Date.now(), field, weekly, env);
   },
 } satisfies ExportedHandler<Env>;

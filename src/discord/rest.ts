@@ -3,6 +3,8 @@
 // The selftest provides a fake Sender that records calls instead of hitting the API.
 import type { Env } from '../types';
 import { GROUP_ROLE_ID } from '../config';
+import { alertAdmins } from '../services/alerts';
+import { M } from '../messages';
 
 const API = 'https://discord.com/api/v10';
 
@@ -83,7 +85,10 @@ export function createSender(env: Env): Sender {
       if (msg.embeds !== undefined) payload.embeds = msg.embeds;
       if (msg.components !== undefined) payload.components = msg.components;
       const res = await call(`${API}/channels/${channelId}/messages/${messageId}`, 'PATCH', payload);
-      if (!res.ok) console.error('[discord edit]', res.status, await res.text());
+      if (!res.ok) {
+        console.error('[discord edit]', res.status, await res.text());
+        await alertAdmins(env, M.alert.editFailed(channelId, messageId, res.status));
+      }
     },
   };
 }

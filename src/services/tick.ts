@@ -2,10 +2,13 @@
 // Advances time-driven transitions and fires due nudges. Idempotent: safe to re-run.
 import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
+import type { Env } from '../types';
 import type { FieldClient } from './field';
 import { isCheckinExpired, isRsvpExpired, isVotingExpired } from '../core/lifecycle';
 import * as games from './games';
 import { maybeOpenNextGame, type WeeklyConfig } from './weekly';
+import { alertAdmins } from './alerts';
+import { M } from '../messages';
 
 export async function runTick(
   api: Sender,
@@ -13,6 +16,7 @@ export async function runTick(
   now: number,
   field: FieldClient,
   weekly: WeeklyConfig,
+  env: Env,
 ): Promise<void> {
   const active = await repo.getActiveGames();
   for (const game of active) {
@@ -34,6 +38,7 @@ export async function runTick(
       }
     } catch (e) {
       console.error('[tick] game', game.id, e);
+      await alertAdmins(env, M.alert.tickFailed(game.id, String(e)));
     }
   }
 
