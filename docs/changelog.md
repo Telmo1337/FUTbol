@@ -43,3 +43,19 @@ certo. O quadro de votação antigo também ficou pendurado com botões vivos.
 quadro de inscrições publicado). Após o deploy da correção, o jogo foi marcado `CANCELLED` na
 base de dados — a cron relançou sozinha uma sondagem nova (jogo 55) dentro de um minuto, sem
 intervenção manual adicional.
+
+## 2026-07-02 — Alertas de admin por DM (falhas silenciosas)
+
+Depois do incidente acima, ficou claro que o tick e as edições de mensagens do Discord podiam
+falhar em silêncio (só `console.error`, sem qualquer aviso visível). A Cloudflare não tem, na
+conta usada por este projeto, um tipo de notificação para erros de um Worker específico (revisto
+o catálogo completo de 52 tipos disponível em Notifications — nenhum cobre isto).
+
+**Solução:** o próprio bot avisa os admins diretamente. Novo `src/services/alerts.ts`
+(`alertAdmins`) manda uma DM a cada utilizador em `ADMIN_IDS` sempre que:
+- o tick apanha um erro a processar um jogo (`src/services/tick.ts`);
+- uma edição de mensagem ao Discord falha (`src/discord/rest.ts`, `api.edit`).
+
+É best-effort e nunca lança exceção — corre a partir de blocos que já estão a reagir a uma falha,
+por isso não pode mascarar nem agravar o problema original. Sem custo adicional (usa o mesmo
+token do bot) e sem configuração nova (reutiliza `ADMIN_IDS`, já existente).

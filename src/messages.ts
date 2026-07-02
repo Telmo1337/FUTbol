@@ -150,6 +150,13 @@ export const M = {
     error: 'Algo correu mal 😬',
   },
 
+  // ---- Admin DM alerts (best-effort, only when the tick or a board edit silently fails) ----
+  alert: {
+    tickFailed: (gameId: number, err: string) => `⚠️ **Tick falhou** no jogo ${gameId}: \`${err}\``,
+    editFailed: (channelId: string, msgId: string, status: number) =>
+      `⚠️ **Falha ao editar uma mensagem** — canal ${channelId}, mensagem ${msgId} (HTTP ${status}).`,
+  },
+
   // ---- Check-in board (kickoff → +window): "Cheguei ✅" ----
   checkin: {
     title: (when: string) => `🟢 **Hora do jogo — ${when}**`,
