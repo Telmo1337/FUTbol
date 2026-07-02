@@ -2,6 +2,8 @@
 //
 //   VOTING ──deadline, clear winner──▶ RSVP_OPEN
 //   VOTING ──deadline, tie───────────▶ TIEBREAK ──admin picks──▶ RSVP_OPEN
+//   VOTING ──deadline, no future slots─▶ CANCELLED   (processed too late; cron may relaunch)
+//   TIEBREAK ──every slot passes─────▶ CANCELLED   (dead tiebreak; cron may relaunch)
 //   RSVP_OPEN ──rsvp_close_at────────▶ LOCKED   (or CANCELLED if < min players)
 //   LOCKED ──kickoff_at──────────────▶ CHECKIN_OPEN  (bot posts the "Cheguei ✅" board)
 //   CHECKIN_OPEN ──checkin_close_at──▶ PLAYED         (ghosts assigned, recap posted)

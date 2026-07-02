@@ -53,6 +53,7 @@ function check(name: string, cond: boolean) {
 
 // --- Fake Discord sender: records message contents instead of sending them ---
 const sent: { chatId: string; text: string }[] = [];
+const edits: { msgId: string; content?: string; componentsCleared: boolean }[] = [];
 let msgId = 1000;
 const sender: Sender = {
   async send(chatId, msg) {
@@ -72,11 +73,22 @@ const sender: Sender = {
     sent.push({ chatId, text: `${msg.content ?? ''}\n${emb}` });
     return String(++msgId);
   },
-  async edit() {
-    /* edits don't need recording for these checks */
+  async edit(_chatId, editMsgId, msg) {
+    edits.push({ msgId: editMsgId, content: msg.content, componentsCleared: Array.isArray(msg.components) && msg.components.length === 0 });
   },
 };
 const anySentIncludes = (s: string) => sent.some((m) => m.text.includes(s));
+const editsFor = (id: string) => edits.filter((e) => e.msgId === id);
+
+// A sender whose send() always throws — for exercising the openRsvp failure/revert path.
+const throwingSender: Sender = {
+  async send() {
+    throw new Error('boom');
+  },
+  async edit() {
+    /* not reached before the throw in the scenarios we use this for */
+  },
+};
 
 // --- Pure-function checks ---
 const NOW = Date.UTC(2026, 5, 15, 12, 0, 0); // 2026-06-15 12:00 UTC
@@ -661,6 +673,185 @@ await games.createGame(sender, repo, {
   voteDeadline: dayNow + DAY, slots: [{ kickoffAt: dayNow + DAY, label: 'só um' }], now: dayNow,
 });
 check('createGame: refuses a < 2-slot poll (no game created)', (await repo.getCurrentGame(wChatGuard)) === null);
+
+// --- tie-break robustness: past slots ignored, tie prompt disarmed, CAS, revert-on-failure ---
+const pastKickoff = NOW - DAY;
+
+// 1) A tie between two FUTURE slots must win even when a PAST slot has more raw votes —
+//    this is exactly the production bug (a stale slot silently outvoting live options).
+const tieChat = `tie-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: tieChat,
+  createdBy: '1',
+  locationNote: 'Campo',
+  minPlayers: 2,
+  capPlayers: 10,
+  voteDeadline: NOW + DAY,
+  slots: [
+    { kickoffAt: pastKickoff, label: 'passado' },
+    { kickoffAt: slotA, label: formatWhen(slotA) },
+    { kickoffAt: slotB, label: formatWhen(slotB) },
+  ],
+  now: NOW,
+});
+let tieGame = (await repo.getCurrentGame(tieChat))!;
+const [pastSlot, futureA, futureB] = await repo.getSlots(tieGame.id);
+for (const uid of ['10', '11', '12']) await games.handleVote(sender, repo, tieGame.id, pastSlot.id, uid, NOW);
+await games.handleVote(sender, repo, tieGame.id, futureA.id, '20', NOW);
+await games.handleVote(sender, repo, tieGame.id, futureA.id, '21', NOW);
+await games.handleVote(sender, repo, tieGame.id, futureB.id, '30', NOW);
+await games.handleVote(sender, repo, tieGame.id, futureB.id, '31', NOW);
+
+await games.closeVoting(sender, repo, tieGame, NOW + DAY + 1);
+tieGame = (await repo.getGame(tieGame.id))!;
+check(
+  'closeVoting: a past slot with more votes never wins — future slots tie instead',
+  tieGame.status === 'TIEBREAK' && tieGame.tieMsgId != null,
+);
+check(
+  'closeVoting: tie prompt disarms the OLD vote board (keyboard removed)',
+  editsFor(tieGame.voteMsgId!).some((e) => e.componentsCleared),
+);
+
+// 2) resolveTie outcomes: past slot rejected, foreign slot rejected, valid future slot accepted
+//    (and disarms the tie prompt), a second pick on the same game is rejected.
+check(
+  'resolveTie: rejects a past slot without changing status',
+  (await games.resolveTie(sender, repo, tieGame.id, pastSlot.id, NOW + DAY + 1)) === 'past-slot' &&
+    (await repo.getGame(tieGame.id))!.status === 'TIEBREAK',
+);
+const otherChat = `tie-other-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: otherChat, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 10,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+const foreignSlot = (await repo.getSlots((await repo.getCurrentGame(otherChat))!.id))[0];
+check(
+  'resolveTie: rejects a slot belonging to another game',
+  (await games.resolveTie(sender, repo, tieGame.id, foreignSlot.id, NOW + DAY + 1)) === 'bad-slot',
+);
+check(
+  'resolveTie: a valid future slot resolves → RSVP_OPEN + rsvp board posted',
+  (await games.resolveTie(sender, repo, tieGame.id, futureA.id, NOW + DAY + 1)) === 'ok',
+);
+tieGame = (await repo.getGame(tieGame.id))!;
+check(
+  'resolveTie: winning slot + rsvp message recorded',
+  tieGame.status === 'RSVP_OPEN' && tieGame.winningSlotId === futureA.id && tieGame.rsvpMsgId != null,
+);
+check(
+  'resolveTie: disarms the tie prompt with the chosen label, no buttons',
+  editsFor(tieGame.tieMsgId!).some((e) => e.componentsCleared && (e.content ?? '').includes('Horário escolhido')),
+);
+check(
+  'resolveTie: a second pick on the same game is rejected (already resolved)',
+  (await games.resolveTie(sender, repo, tieGame.id, futureB.id, NOW + DAY + 1)) === 'not-tiebreak',
+);
+
+// 3) lockWinner is a guarded write: once RSVP_OPEN, a stray call can never re-lock it.
+check(
+  'repo.lockWinner: guarded write returns false once the game left VOTING/TIEBREAK',
+  (await repo.lockWinner(tieGame.id, futureB.id, NOW + 2 * DAY, NOW + DAY + 2)) === false,
+);
+
+// 4) closeVoting with EVERY slot in the past: cancels (not admin-cancels) so the cron may
+//    relaunch, and tells the group why instead of the misleading "not enough players".
+const expiredChat = `tie-expired-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: expiredChat, createdBy: '1', locationNote: 'Campo', minPlayers: 2, capPlayers: 10,
+  voteDeadline: NOW + DAY,
+  slots: [{ kickoffAt: pastKickoff, label: 'a' }, { kickoffAt: pastKickoff + 1000, label: 'b' }],
+  now: NOW,
+});
+let expiredGame = (await repo.getCurrentGame(expiredChat))!;
+await games.closeVoting(sender, repo, expiredGame, NOW + DAY + 1);
+expiredGame = (await repo.getGame(expiredGame.id))!;
+check(
+  'closeVoting: all-past slots → plain CANCELLED (not admin) + explains why',
+  expiredGame.status === 'CANCELLED' && anySentIncludes('já passaram'),
+);
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: expiredChat, createdBy: '1' }, dayNow);
+check(
+  'auto: plain CANCELLED from an expired tiebreak still lets the cron relaunch',
+  (await repo.getCurrentGame(expiredChat))?.status === 'VOTING',
+);
+
+// 5) A tie that mixes a past + a future slot resolves automatically to the future one —
+//    no pointless one-button prompt when there's already a real vote to honour.
+const autoChat = `tie-auto-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: autoChat, createdBy: '1', locationNote: 'Campo', minPlayers: 2, capPlayers: 10,
+  voteDeadline: NOW + DAY,
+  slots: [{ kickoffAt: pastKickoff, label: 'passado' }, { kickoffAt: slotA, label: formatWhen(slotA) }],
+  now: NOW,
+});
+let autoGame = (await repo.getCurrentGame(autoChat))!;
+const [autoPast, autoFuture] = await repo.getSlots(autoGame.id);
+await games.handleVote(sender, repo, autoGame.id, autoPast.id, '1', NOW);
+await games.handleVote(sender, repo, autoGame.id, autoFuture.id, '2', NOW);
+await games.closeVoting(sender, repo, autoGame, NOW + DAY + 1);
+autoGame = (await repo.getGame(autoGame.id))!;
+check(
+  'closeVoting: past+future 1-1 "tie" auto-resolves to the future slot (no admin prompt)',
+  autoGame.status === 'RSVP_OPEN' && autoGame.winningSlotId === autoFuture.id,
+);
+
+// 6) openRsvp failure (Discord POST throws): the status reverts instead of stranding the
+//    game in RSVP_OPEN with no board — a retry with a working sender then self-heals.
+const revertChat = `tie-revert-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: revertChat, createdBy: '1', locationNote: 'Campo', minPlayers: 2, capPlayers: 10,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+let revertGame = (await repo.getCurrentGame(revertChat))!;
+const [revertA] = await repo.getSlots(revertGame.id);
+await games.handleVote(sender, repo, revertGame.id, revertA.id, '1', NOW); // clear winner, no tie
+let threw = false;
+try {
+  await games.closeVoting(throwingSender, repo, revertGame, NOW + DAY + 1);
+} catch {
+  threw = true;
+}
+check('openRsvp: a failed board post throws (surfaces the error)', threw);
+check(
+  'openRsvp: status reverted to VOTING after the failed post (not stuck in RSVP_OPEN)',
+  (await repo.getGame(revertGame.id))!.status === 'VOTING',
+);
+revertGame = (await repo.getGame(revertGame.id))!;
+await games.closeVoting(sender, repo, revertGame, NOW + DAY + 2);
+check('openRsvp: retrying with a working sender self-heals to RSVP_OPEN', (await repo.getGame(revertGame.id))!.status === 'RSVP_OPEN');
+
+// 7) /jogo repost on a TIEBREAK game: only still-valid options are offered, and the old
+//    prompt is disarmed rather than left duplicated.
+const repostChat = `tie-repost-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: repostChat, createdBy: '1', locationNote: 'Campo', minPlayers: 2, capPlayers: 10,
+  voteDeadline: NOW + DAY,
+  slots: [{ kickoffAt: pastKickoff, label: 'passado' }, { kickoffAt: slotA, label: formatWhen(slotA) }, { kickoffAt: slotB, label: formatWhen(slotB) }],
+  now: NOW,
+});
+let repostGame = (await repo.getCurrentGame(repostChat))!;
+const [rpPast, rpA, rpB] = await repo.getSlots(repostGame.id);
+await games.handleVote(sender, repo, repostGame.id, rpPast.id, '1', NOW);
+await games.handleVote(sender, repo, repostGame.id, rpA.id, '2', NOW);
+await games.handleVote(sender, repo, repostGame.id, rpB.id, '3', NOW);
+await games.closeVoting(sender, repo, repostGame, NOW + DAY + 1);
+repostGame = (await repo.getGame(repostGame.id))!;
+const oldTieMsgId = repostGame.tieMsgId!;
+const rpVotes = await repo.getVotes(repostGame.id);
+const rpOptions = games.tieOptions([rpPast, rpA, rpB], rpVotes, NOW + DAY + 1);
+check('tieOptions: excludes the past slot from the option set (pure)', rpOptions.every((s) => s.id !== rpPast.id));
+await games.repost(sender, repo, repostGame, NOW + DAY + 5);
+repostGame = (await repo.getGame(repostGame.id))!;
+check('repost on TIEBREAK: posts a fresh prompt (tieMsgId changes)', repostGame.tieMsgId !== oldTieMsgId);
+check('repost on TIEBREAK: disarms the old prompt', editsFor(oldTieMsgId).some((e) => e.componentsCleared));
+
+// 8) /cancelar on a TIEBREAK game disarms its prompt too (not just RSVP/vote boards).
+await games.cancelGame(sender, repo, repostGame, NOW + DAY + 10);
+check(
+  '/cancelar on TIEBREAK: disarms the (still-live) tie prompt',
+  editsFor(repostGame.tieMsgId!).some((e) => e.componentsCleared),
+);
 
 console.log(`\n${failures === 0 ? '🎉 All checks passed' : `💥 ${failures} check(s) failed`}`);
 await proxy.dispose();

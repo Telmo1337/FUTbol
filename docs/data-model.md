@@ -53,7 +53,7 @@ O agregado central. Uma linha por jogo, com o estado e os deadlines do ciclo de 
 | `rsvp_close_at` | INTEGER null | Fim das inscrições (definido ao trancar o vencedor) |
 | `checkin_close_at` | INTEGER null | Fim da janela de check-in (kickoff + janela) |
 | `winning_slot_id` | INTEGER null | Slot vencedor |
-| `vote_msg_id` / `rsvp_msg_id` / `checkin_msg_id` / `teams_msg_id` / `payment_msg_id` | TEXT null | Ids das mensagens-board vivas |
+| `vote_msg_id` / `rsvp_msg_id` / `tie_msg_id` / `checkin_msg_id` / `teams_msg_id` / `payment_msg_id` | TEXT null | Ids das mensagens-board vivas |
 | `teams_locked_at` | INTEGER null | Quando o admin publicou as equipas |
 | `price_per_person_cents` | INTEGER null | Preço por pessoa em cêntimos (null = por definir) |
 | `flag_game_on_sent` / `flag_short_warn_sent` / `flag_nonresp_ping_sent` | INTEGER (bool) | Guardas exactly-once dos nudges |

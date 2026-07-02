@@ -27,8 +27,11 @@ export async function runTick(
         if (slot && now >= slot.kickoffAt) await games.openCheckin(api, repo, game, now);
       } else if (game.status === 'CHECKIN_OPEN') {
         if (isCheckinExpired(game, now)) await games.closeCheckin(api, repo, game, now);
+      } else if (game.status === 'TIEBREAK') {
+        // Normally waits for the admin to pick — the one time-driven exception is a dead
+        // tiebreak whose every candidate slot has already passed (processed too late).
+        await games.expireTiebreak(api, repo, game, now);
       }
-      // TIEBREAK waits for the admin to pick — nothing time-driven.
     } catch (e) {
       console.error('[tick] game', game.id, e);
     }

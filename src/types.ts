@@ -91,6 +91,7 @@ export interface Game {
   winningSlotId: number | null;
   voteMsgId: string | null; // Discord message id of the live vote board
   rsvpMsgId: string | null;
+  tieMsgId: string | null; // the "🤝 Empate" admin-prompt message, so it can be disarmed
   checkinMsgId: string | null;
   teamsMsgId: string | null; // the public "⚔️ Equipas" board (flips from "a montar" → revealed)
   teamsLockedAt: number | null; // unix ms UTC, set when the admin publishes the teams
