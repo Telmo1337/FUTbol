@@ -2,7 +2,7 @@
 // Pure logic lives in core/*; this is the wiring. Called by the interactions handler and the tick.
 import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
-import type { Game, RsvpStatus, Slot } from '../types';
+import type { Game, RsvpStatus, Slot, Vote } from '../types';
 import { M } from '../messages';
 import { esc, mention } from '../util';
 import { CHECKIN_WINDOW_MS, GROUP_PING, GROUP_PING_MENTIONS, RSVP_CLOSE_BEFORE_KICKOFF_MS } from '../config';
@@ -150,11 +150,31 @@ async function rerenderVote(api: Sender, repo: Repo, game: Game): Promise<void> 
   await editBoard(api, game.chatId, game.voteMsgId, text, voteComponents(game.id, slots), COLORS.vote);
 }
 
+/** The still-valid options for a tie prompt: unique future winner, else the future tied set
+ *  (empty when every slot has already passed). Votes are frozen once status leaves VOTING,
+ *  so recomputing this later (e.g. on repost) is deterministic. */
+export function tieOptions(slots: Slot[], votes: Vote[], now: number): Slot[] {
+  const future = slots.filter((s) => s.kickoffAt > now);
+  const { winner, tied } = pickWinner(future, votes);
+  return winner ? [winner] : tied;
+}
+
 export async function closeVoting(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
   if (game.status !== 'VOTING') return;
   const slots = await repo.getSlots(game.id);
   const votes = await repo.getVotes(game.id);
-  const { winner, tied } = pickWinner(slots, votes);
+  const future = slots.filter((s) => s.kickoffAt > now);
+
+  // Processed too late (or the poll's dates were never in the future to begin with) — every
+  // slot has already passed. Plain CANCELLED (not CANCELLED_ADMIN) so the cron can relaunch.
+  if (future.length === 0) {
+    await repo.setStatus(game.id, 'CANCELLED', now);
+    if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
+    await send(api, game.chatId, M.votingExpired);
+    return;
+  }
+
+  const { winner, tied } = pickWinner(future, votes);
   if (winner) {
     await openRsvp(api, repo, game, winner, now);
   } else {
@@ -165,26 +185,32 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
       await editBoard(api, game.chatId, game.voteMsgId, tieText, undefined, COLORS.vote);
       await removeKeyboard(api, game.chatId, game.voteMsgId);
     }
-    await send(api, game.chatId, M.tieAdminPrompt, tieComponents(game.id, tied.length ? tied : slots));
+    const msgId = await send(api, game.chatId, M.tieAdminPrompt, tieComponents(game.id, tied));
+    await repo.setTieMsg(game.id, msgId, now);
   }
 }
 
-export async function resolveTie(api: Sender, repo: Repo, gameId: number, slotId: number, now: number): Promise<boolean> {
+export type TieOutcome = 'ok' | 'not-tiebreak' | 'past-slot' | 'bad-slot';
+
+export async function resolveTie(api: Sender, repo: Repo, gameId: number, slotId: number, now: number): Promise<TieOutcome> {
   const game = await repo.getGame(gameId);
-  if (!game || game.status !== 'TIEBREAK') return false;
+  if (!game || game.status !== 'TIEBREAK') return 'not-tiebreak';
   const slot = await repo.getSlot(slotId);
-  if (!slot || slot.gameId !== gameId) return false;
-  await openRsvp(api, repo, game, slot, now);
-  return true;
+  if (!slot || slot.gameId !== gameId) return 'bad-slot';
+  if (slot.kickoffAt <= now) return 'past-slot';
+  const ok = await openRsvp(api, repo, game, slot, now);
+  return ok ? 'ok' : 'not-tiebreak';
 }
 
-async function openRsvp(api: Sender, repo: Repo, game: Game, winner: Slot, now: number): Promise<void> {
+/** VOTING/TIEBREAK → RSVP_OPEN. Locks the winner FIRST (a guarded write — false means someone
+ *  else already moved the game on, e.g. a double-click or the tick racing the admin) and only
+ *  THEN posts the RSVP board, so a failed Discord POST reverts the status instead of stranding
+ *  the game in RSVP_OPEN with no board and no way back into the tie/vote flow. */
+async function openRsvp(api: Sender, repo: Repo, game: Game, winner: Slot, now: number): Promise<boolean> {
   const rsvpCloseAt = winner.kickoffAt - RSVP_CLOSE_BEFORE_KICKOFF_MS;
-  await repo.lockWinner(game.id, winner.id, rsvpCloseAt, now);
-  if (game.voteMsgId) {
-    await editBoard(api, game.chatId, game.voteMsgId, renderVoteResult(game.locationNote, winner.label));
-    await removeKeyboard(api, game.chatId, game.voteMsgId);
-  }
+  const locked = await repo.lockWinner(game.id, winner.id, rsvpCloseAt, now);
+  if (!locked) return false;
+
   const text = renderRsvpMessage({
     loc: game.locationNote,
     winnerLabel: winner.label,
@@ -194,8 +220,35 @@ async function openRsvp(api: Sender, repo: Repo, game: Game, winner: Slot, now: 
     rsvpCloseAt,
     state: 'open',
   });
-  const msgId = await sendBoard(api, game.chatId, text, rsvpComponents(game.id));
-  await repo.setRsvpMsg(game.id, msgId, now);
+  try {
+    const msgId = await sendBoard(api, game.chatId, text, rsvpComponents(game.id));
+    await repo.setRsvpMsg(game.id, msgId, now);
+  } catch (e) {
+    await repo.setStatus(game.id, game.status, now); // revert to the pre-lock status; caller can retry
+    throw e;
+  }
+
+  if (game.voteMsgId) {
+    await editBoard(api, game.chatId, game.voteMsgId, renderVoteResult(game.locationNote, winner.label));
+    await removeKeyboard(api, game.chatId, game.voteMsgId);
+  }
+  if (game.tieMsgId) {
+    await api.edit(game.chatId, game.tieMsgId, { content: M.tieResolvedNote(winner.label), components: [] });
+  }
+  return true;
+}
+
+// TIEBREAK with every candidate slot now in the past (nothing time-driven normally moves a
+// TIEBREAK game — this is the one exception, called from the tick). Plain CANCELLED so the
+// cron's auto-open can relaunch, instead of leaving a dead poll blocking it forever.
+export async function expireTiebreak(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
+  if (game.status !== 'TIEBREAK') return;
+  const slots = await repo.getSlots(game.id);
+  if (slots.some((s) => s.kickoffAt > now)) return;
+  await repo.setStatus(game.id, 'CANCELLED', now);
+  if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
+  if (game.tieMsgId) await removeKeyboard(api, game.chatId, game.tieMsgId);
+  await send(api, game.chatId, M.votingExpired);
 }
 
 // ---------- rsvp ----------
@@ -322,6 +375,7 @@ export async function cancelGame(api: Sender, repo: Repo, game: Game, now: numbe
   await repo.setStatus(game.id, 'CANCELLED_ADMIN', now);
   if (game.rsvpMsgId) await rerenderRsvp(api, repo, { ...game, status: 'CANCELLED_ADMIN' }, 'cancelled');
   else if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
+  if (game.tieMsgId) await removeKeyboard(api, game.chatId, game.tieMsgId);
   await send(api, game.chatId, M.cancelledByAdmin);
 }
 
@@ -359,7 +413,15 @@ export async function repost(api: Sender, repo: Repo, game: Game, now: number): 
     await repo.setRsvpMsg(game.id, msgId, now);
   } else if (game.status === 'TIEBREAK') {
     const slots = await repo.getSlots(game.id);
-    await send(api, game.chatId, M.tieAdminPrompt, tieComponents(game.id, slots));
+    const votes = await repo.getVotes(game.id);
+    const options = tieOptions(slots, votes, now);
+    if (options.length === 0) {
+      await expireTiebreak(api, repo, game, now);
+      return;
+    }
+    if (game.tieMsgId) await removeKeyboard(api, game.chatId, game.tieMsgId);
+    const msgId = await send(api, game.chatId, M.tieAdminPrompt, tieComponents(game.id, options));
+    await repo.setTieMsg(game.id, msgId, now);
   } else if (game.status === 'CHECKIN_OPEN') {
     const v = await attendanceView(repo, game);
     if (game.checkinMsgId) await removeKeyboard(api, game.chatId, game.checkinMsgId);

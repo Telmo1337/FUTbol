@@ -410,7 +410,17 @@ async function onComponent(
     ack = await games.handleRsvp(sender, repo, parsed.gameId, player.tgUserId, parsed.status, now);
   } else if (parsed.kind === 'tie') {
     if (!isAdmin(env, player.tgUserId)) ack = M.cb.onlyAdmin;
-    else ack = (await games.resolveTie(sender, repo, parsed.gameId, parsed.slotId, now)) ? M.cb.tieResolved : M.cb.error;
+    else {
+      const outcome = await games.resolveTie(sender, repo, parsed.gameId, parsed.slotId, now);
+      ack =
+        outcome === 'ok'
+          ? M.cb.tieResolved
+          : outcome === 'past-slot'
+            ? M.cb.tiePastSlot
+            : outcome === 'not-tiebreak'
+              ? M.cb.tieAlreadyResolved
+              : M.cb.error;
+    }
   } else if (parsed.kind === 'checkin') {
     ack = await games.handleCheckin(sender, repo, parsed.gameId, player.tgUserId, now);
   } else if (parsed.kind === 'unghost') {

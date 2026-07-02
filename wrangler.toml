@@ -32,3 +32,10 @@ migrations_dir = "migrations"
 # Runs the scheduled() handler every minute — powers the smart nudges & deadlines.
 [triggers]
 crons = ["* * * * *"]
+
+# Workers Logs: makes today-silent failures (e.g. console.error in discord/rest.ts and
+# services/tick.ts) searchable in the dashboard. Free plan: 200k events/day, 3-day retention —
+# the every-minute cron uses a tiny fraction of that. Not retroactive.
+[observability.logs]
+enabled = true
+invocation_logs = true

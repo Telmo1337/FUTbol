@@ -73,6 +73,8 @@ export const M = {
   noTeamGame: 'Não há nenhum jogo com equipas. Fecha as inscrições de um jogo primeiro.',
 
   tieAdminPrompt: '🤝 **Empate na votação!** Admin, escolhe o horário.',
+  tieResolvedNote: (label: string) => `✅ Horário escolhido: **${esc(label)}**`,
+  votingExpired: '⏰ Todos os horários desta votação já passaram. Jogo cancelado — nova sondagem em breve.',
 
   promoted: (who: string, when: string, loc: string) =>
     `${who}, abriu uma vaga — **estás dentro** para ${when}! 📍 ${esc(loc)}`,
@@ -134,6 +136,8 @@ export const M = {
     rsvpClosed: 'As inscrições já fecharam.',
     onlyAdmin: 'Só o admin pode escolher.',
     tieResolved: 'Horário escolhido ✅',
+    tiePastSlot: '⚠️ Esse horário já passou. Escolhe outro.',
+    tieAlreadyResolved: 'Este desempate já não está ativo.',
     checkinDone: 'Boa! Ficaste registado ✅',
     checkinAlready: 'Já estavas registado ✅',
     checkinClosed: 'O check-in já fechou.',

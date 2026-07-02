@@ -118,16 +118,22 @@ export function createRepo(d1: D1Database) {
       await db.update(games).set({ rsvpMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
     },
 
+    async setTieMsg(id: number, msgId: string, now: number): Promise<void> {
+      await db.update(games).set({ tieMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
+    },
+
     async setStatus(id: number, status: GameStatus, now: number): Promise<void> {
       await db.update(games).set({ status, updatedAt: now }).where(eq(games.id, id)).run();
     },
 
-    async lockWinner(id: number, slotId: number, rsvpCloseAt: number, now: number): Promise<void> {
-      await db
-        .update(games)
-        .set({ status: 'RSVP_OPEN', winningSlotId: slotId, rsvpCloseAt, updatedAt: now })
-        .where(eq(games.id, id))
-        .run();
+    /** Guarded write: only flips VOTING/TIEBREAK → RSVP_OPEN. Returns false if another
+     *  writer (a double-click, or the tick racing the admin) already moved the game on. */
+    async lockWinner(id: number, slotId: number, rsvpCloseAt: number, now: number): Promise<boolean> {
+      const res = (await db.run(
+        sql`UPDATE games SET status = 'RSVP_OPEN', winning_slot_id = ${slotId}, rsvp_close_at = ${rsvpCloseAt}, updated_at = ${now}
+            WHERE id = ${id} AND status IN ('VOTING', 'TIEBREAK')`,
+      )) as unknown as D1Result;
+      return (res.meta?.changes ?? 0) > 0;
     },
 
     /** LOCKED → CHECKIN_OPEN: kickoff has passed, start collecting "Cheguei ✅". */

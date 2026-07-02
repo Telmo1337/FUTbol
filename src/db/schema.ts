@@ -28,6 +28,7 @@ export const games = sqliteTable('games', {
   winningSlotId: integer('winning_slot_id'),
   voteMsgId: text('vote_msg_id'),
   rsvpMsgId: text('rsvp_msg_id'),
+  tieMsgId: text('tie_msg_id'), // the "🤝 Empate" admin-prompt message, so it can be disarmed
   checkinMsgId: text('checkin_msg_id'),
   teamsMsgId: text('teams_msg_id'),
   teamsLockedAt: integer('teams_locked_at'),
