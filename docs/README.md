@@ -21,6 +21,7 @@ ver o [README](../README.md) na raiz.
 | [development.md](development.md) | Setup, testes, CI, release flow e deploy | Quem desenvolve |
 | [decisions.md](decisions.md) | Registo de decisões de arquitetura (ADRs) | Quem quer perceber o porquê |
 | [roadmap.md](roadmap.md) | Histórico de versões e próximos passos | Quem acompanha o produto |
+| [changelog.md](changelog.md) | Registo datado de incidentes e correções em produção | Quem investiga um problema |
 | [v2-plan.md](v2-plan.md) | Plano histórico da v2 (estatísticas) | Referência histórica |
 
 ## Convenções desta documentação
