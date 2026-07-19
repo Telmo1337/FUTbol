@@ -37,10 +37,11 @@ suficiente para o desvio de relógio normal entre o bot e o Discord.
 ## Escaping de input do utilizador
 
 Nomes e locais escritos por utilizadores passam por `esc()` (`src/util.ts`) antes de entrarem
-numa mensagem: faz backslash-escape dos caracteres de markdown inline e neutraliza `@` e `<`
-com um zero-width space, para que um nome como `@everyone` ou `<@123>` nunca se torne uma
-menção real. Os ids que chegam em `custom_id` de botões (por exemplo o do "X jogou") são
-validados como dígitos antes de serem usados num mention.
+numa mensagem: faz backslash-escape dos caracteres de markdown inline — incluindo `[ ] ( )`,
+para que um nickname não consiga formar um link mascarado (`[texto](url)`) num embed público —
+e neutraliza `@` e `<` com um zero-width space, para que um nome como `@everyone` ou `<@123>`
+nunca se torne uma menção real. Os ids que chegam em `custom_id` de botões (por exemplo o do
+"X jogou") são validados como dígitos antes de serem usados num mention.
 
 ## Autorização de admin
 

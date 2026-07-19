@@ -2,14 +2,16 @@
 
 /**
  * Make user-provided text (names, locations) safe to drop into a Discord message:
- *  - backslash-escape the inline markdown chars so it can't turn bold/italic/etc.
+ *  - backslash-escape the inline markdown chars (incl. [ ] ( ) so a name can't
+ *    form a masked link like "[clica aqui](https://evil.example)") so it can't
+ *    turn bold/italic/link/etc.
  *  - defang @ and < with an invisible zero-width space so a name like "@everyone"
  *    or "<@123>" can never become a real ping (names are inline, never line-start,
  *    so list/heading/quote chars don't need escaping).
  */
 export function esc(s: string): string {
   return s
-    .replace(/([\\*_~`|])/g, '\\$1')
+    .replace(/([\\*_~`|[\]()])/g, '\\$1')
     .replace(/@/g, '@​')
     .replace(/</g, '<​');
 }

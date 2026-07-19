@@ -142,6 +142,8 @@ export function parseDateTime(input: string, now: number): number | null {
   const hour = Number(m[4]);
   const minute = Number(m[5]);
   if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day > daysInMonth) return null;
   let ts = lisbonToUtc(year, month, day, hour, minute);
   if (!m[3] && ts < now - DAY_MS) ts = lisbonToUtc(year + 1, month, day, hour, minute);
   return ts;

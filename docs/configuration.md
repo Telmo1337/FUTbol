@@ -89,7 +89,7 @@ milissegundos.
 | `AVAIL_MAX_SLOTS` | 25 | Máximo de slots (limite de botões do Discord) |
 | `WEEKLY_LOCATION_NOTE` | `IPVC ESE - campo 7x7` | Local do auto-jogo |
 | `FIELD_API_KEY` | (Firebase web key) | **Pública por design** — ver [security.md](security.md) |
-| `FIRESTORE_BASE` / `FIELD_CLUB_ID` / `FIELD_ID` | ids do field.pt | Documentos a ler no Firestore |
+| `FIRESTORE_BASE` / `FIELD_ID` | ids do field.pt | Documentos a ler no Firestore |
 
 ### Ping do grupo
 

@@ -75,7 +75,8 @@ export function createSender(env: Env): Sender {
         console.error('[discord send]', res.status, await res.text());
         throw new Error(`discord send failed: ${res.status}`);
       }
-      const json = (await res.json()) as { id: string };
+      const json = (await res.json()) as { id?: unknown };
+      if (typeof json.id !== 'string') throw new Error('discord send: malformed response (no message id)');
       return json.id;
     },
 
@@ -91,4 +92,21 @@ export function createSender(env: Env): Sender {
       }
     },
   };
+}
+
+/** Edit the original reply of a DEFERRED interaction, via the interaction webhook (no bot
+ *  token needed — the token in the interaction payload authorizes this). Used to deliver the
+ *  real result/toast after we've already ack'd a button tap to beat Discord's 3s deadline.
+ *  Best-effort: never throws, since callers use this from inside their own error handling. */
+export async function editInteractionReply(applicationId: string, token: string, content: string): Promise<void> {
+  try {
+    const res = await fetch(`${API}/webhooks/${applicationId}/${token}/messages/@original`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) console.error('[discord editInteractionReply]', res.status, await res.text());
+  } catch (e) {
+    console.error('[discord editInteractionReply] failed', e);
+  }
 }

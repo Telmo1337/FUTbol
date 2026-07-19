@@ -53,11 +53,12 @@ export function parseNovoJogoFields(f: NovoJogoFields, now: number): ParsedNovoJ
   let minPlayers = DEFAULT_MIN_PLAYERS;
   let capPlayers = DEFAULT_CAP_PLAYERS;
   if (f.players && f.players.trim()) {
-    const m = f.players.match(/(\d+)\s*(?:-\s*(\d+))?/);
+    const m = f.players.trim().match(/^(\d+)\s*(?:-\s*(\d+))?$/);
     if (!m) return { error: M.errBadPlayers };
     minPlayers = Number(m[1]);
     capPlayers = m[2] ? Number(m[2]) : minPlayers;
   }
+  if (minPlayers < 1) return { error: M.errBadPlayers };
   if (minPlayers > capPlayers) return { error: M.errMinGtCap };
 
   let voteDeadline: number | null = null;

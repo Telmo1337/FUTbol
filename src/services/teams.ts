@@ -42,21 +42,16 @@ export async function postTeamsPlaceholder(api: Sender, repo: Repo, game: Game, 
 
 /**
  * Apply an admin's pick for one side: that side becomes exactly `ids` (squad members only),
- * and anyone newly picked is removed from the other side. The other side is otherwise kept.
+ * and anyone newly picked is pulled off the other side. The other side is otherwise kept.
+ * Written via setTeamSide (a single atomic D1 batch touching only this side's rows), so the
+ * two independent Alpha/Beta selects can be submitted concurrently without one clobbering
+ * the other's read-modify-write (they used to both rewrite the whole result_teams set).
  */
 export async function applyTeamSelect(repo: Repo, game: Game, side: ResultSide, ids: string[]): Promise<void> {
   const rsvps = await repo.getRsvps(game.id);
   const squadIds = new Set(splitSquad(rsvps, game.capPlayers).confirmed.map((r) => r.tgUserId));
   const chosen = ids.filter((id) => squadIds.has(id));
-  const chosenSet = new Set(chosen);
-  const other: ResultSide = side === 'A' ? 'B' : 'A';
-  const teams = await repo.getResultTeams(game.id);
-  const rows: { tgUserId: string; side: ResultSide }[] = [];
-  for (const t of teams) {
-    if (t.side === other && !chosenSet.has(t.tgUserId)) rows.push({ tgUserId: t.tgUserId, side: other });
-  }
-  for (const id of chosen) rows.push({ tgUserId: id, side });
-  await repo.replaceTeams(game.id, rows);
+  await repo.setTeamSide(game.id, side, chosen);
 }
 
 /** Publish the teams (reveal the public board). Returns false if a team is empty. */

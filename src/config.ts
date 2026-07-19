@@ -81,8 +81,7 @@ export const GAME_STATUSES_ACTIVE = ['VOTING', 'TIEBREAK', 'RSVP_OPEN', 'LOCKED'
 export const FIELD_API_KEY = 'AIzaSyAsdBrcNAvRvDWj-aEyWr6twLwgNTb71OY';
 export const FIRESTORE_BASE =
   'https://firestore.googleapis.com/v1/projects/field-v2-prod/databases/(default)/documents';
-/** Our club + pitch doc ids (the IPVC ESE 7x7 field). */
-export const FIELD_CLUB_ID = '5QkuPXdvkISXwFZQyMlB';
+/** Our pitch doc id (the IPVC ESE 7x7 field). */
 export const FIELD_ID = 'Ia79UGKogA7oNBxp9PNS';
 
 /**

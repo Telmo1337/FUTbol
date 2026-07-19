@@ -153,8 +153,10 @@ export const M = {
   // ---- Admin DM alerts (best-effort, only when the tick or a board edit silently fails) ----
   alert: {
     tickFailed: (gameId: number, err: string) => `⚠️ **Tick falhou** no jogo ${gameId}: \`${err}\``,
+    tickCrashed: (err: string) => `⚠️ **Tick falhou** (geral, fora de um jogo específico): \`${err}\``,
     editFailed: (channelId: string, msgId: string, status: number) =>
       `⚠️ **Falha ao editar uma mensagem** — canal ${channelId}, mensagem ${msgId} (HTTP ${status}).`,
+    interactionFailed: (err: string) => `⚠️ **Falha num botão** (trabalho em segundo plano): \`${err}\``,
   },
 
   // ---- Check-in board (kickoff → +window): "Cheguei ✅" ----

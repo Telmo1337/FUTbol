@@ -2,8 +2,8 @@
 // the published teams board, and the post-game result card. Text only — the interactions
 // layer wraps these in an embed and attaches the buttons/menus.
 import { M } from '../messages';
-import { esc } from '../util';
 import { cardEmbed, type Embed, type EmbedField } from '../discord/embeds';
+import { bulletList } from './list';
 
 export interface TeamMember {
   tgUserId: string;
@@ -15,8 +15,7 @@ export interface TeamsView {
   out: TeamMember[]; // confirmed squad members the admin left out (didn't play)
 }
 
-const list = (items: { displayName: string }[]): string =>
-  items.length === 0 ? M.teams.empty : items.map((p) => `• ${esc(p.displayName)}`).join('\n');
+const list = (items: { displayName: string }[]): string => bulletList(items, M.teams.empty);
 
 /** Strip inline markdown so it isn't shown literally in an embed footer (footers are plain text). */
 const plain = (s: string): string => s.replace(/[*`_~]/g, '');

@@ -2,7 +2,7 @@
 # Before deploying, replace database_id and set the secret below (see README).
 name = "futbol-bot"
 main = "src/index.ts"
-compatibility_date = "2024-12-01"
+compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]

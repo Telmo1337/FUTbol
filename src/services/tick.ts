@@ -18,30 +18,38 @@ export async function runTick(
   weekly: WeeklyConfig,
   env: Env,
 ): Promise<void> {
-  const active = await repo.getActiveGames();
-  for (const game of active) {
-    try {
-      if (isVotingExpired(game, now)) {
-        await games.closeVoting(api, repo, game, now);
-      } else if (game.status === 'RSVP_OPEN') {
-        if (isRsvpExpired(game, now)) await games.closeRsvp(api, repo, game, now);
-        else await games.processNudges(api, repo, game.id, now);
-      } else if (game.status === 'LOCKED') {
-        const slot = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
-        if (slot && now >= slot.kickoffAt) await games.openCheckin(api, repo, game, now);
-      } else if (game.status === 'CHECKIN_OPEN') {
-        if (isCheckinExpired(game, now)) await games.closeCheckin(api, repo, game, now);
-      } else if (game.status === 'TIEBREAK') {
-        // Normally waits for the admin to pick — the one time-driven exception is a dead
-        // tiebreak whose every candidate slot has already passed (processed too late).
-        await games.expireTiebreak(api, repo, game, now);
+  // Everything below — including the initial getActiveGames read and the auto-open call — is
+  // wrapped so a failure that isn't scoped to one game (a DB hiccup, a thrown error outside
+  // the per-game try) still reaches an admin instead of dying silently in `scheduled`.
+  try {
+    const active = await repo.getActiveGames();
+    for (const game of active) {
+      try {
+        if (isVotingExpired(game, now)) {
+          await games.closeVoting(api, repo, game, now);
+        } else if (game.status === 'RSVP_OPEN') {
+          if (isRsvpExpired(game, now)) await games.closeRsvp(api, repo, game, now);
+          else await games.processNudges(api, repo, game.id, now);
+        } else if (game.status === 'LOCKED') {
+          const slot = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
+          if (slot && now >= slot.kickoffAt) await games.openCheckin(api, repo, game, now);
+        } else if (game.status === 'CHECKIN_OPEN') {
+          if (isCheckinExpired(game, now)) await games.closeCheckin(api, repo, game, now);
+        } else if (game.status === 'TIEBREAK') {
+          // Normally waits for the admin to pick — the one time-driven exception is a dead
+          // tiebreak whose every candidate slot has already passed (processed too late).
+          await games.expireTiebreak(api, repo, game, now);
+        }
+      } catch (e) {
+        console.error('[tick] game', game.id, e);
+        await alertAdmins(env, M.alert.tickFailed(game.id, String(e)));
       }
-    } catch (e) {
-      console.error('[tick] game', game.id, e);
-      await alertAdmins(env, M.alert.tickFailed(game.id, String(e)));
     }
-  }
 
-  // Event-driven: open the next game as soon as none is in progress (within daytime hours).
-  await maybeOpenNextGame(api, repo, field, weekly, now);
+    // Event-driven: open the next game as soon as none is in progress (within daytime hours).
+    await maybeOpenNextGame(api, repo, field, weekly, now);
+  } catch (e) {
+    console.error('[tick] top-level', e);
+    await alertAdmins(env, M.alert.tickCrashed(String(e)));
+  }
 }

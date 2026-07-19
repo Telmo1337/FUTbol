@@ -1,5 +1,5 @@
 import { M } from '../messages';
-import { esc } from '../util';
+import { bulletList } from './list';
 
 export interface RenderRecapOpts {
   winnerLabel: string;
@@ -7,8 +7,7 @@ export interface RenderRecapOpts {
   ghosts: { displayName: string }[]; // confirmed but no check-in
 }
 
-const list = (items: { displayName: string }[]): string =>
-  items.length === 0 ? M.recap.empty : items.map((p) => `• ${esc(p.displayName)}`).join('\n');
+const list = (items: { displayName: string }[]): string => bulletList(items, M.recap.empty);
 
 export function renderRecap(o: RenderRecapOpts): string {
   const parts: string[] = [M.recap.title(o.winnerLabel), ''];

@@ -9,7 +9,7 @@ import { runTick } from './services/tick';
 import { parseAdminIds } from './util';
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method === 'GET') return new Response('FUTbol bot online ⚽');
     if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
 
@@ -24,17 +24,23 @@ export default {
     const interaction = JSON.parse(body);
     const repo = createRepo(env.DB);
     const sender = createSender(env);
-    return handleInteraction(interaction, env, repo, sender);
+    return handleInteraction(interaction, env, repo, sender, ctx);
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    const repo = createRepo(env.DB);
-    const sender = createSender(env);
-    const field = createFieldClient();
-    const weekly = {
-      channelId: env.GAME_CHANNEL_ID ?? '',
-      createdBy: parseAdminIds(env.ADMIN_IDS).values().next().value ?? 'system',
-    };
-    await runTick(sender, repo, Date.now(), field, weekly, env);
+    try {
+      const repo = createRepo(env.DB);
+      const sender = createSender(env);
+      const field = createFieldClient();
+      const weekly = {
+        channelId: env.GAME_CHANNEL_ID ?? '',
+        createdBy: parseAdminIds(env.ADMIN_IDS).values().next().value ?? 'system',
+      };
+      await runTick(sender, repo, Date.now(), field, weekly, env);
+    } catch (e) {
+      // runTick already alerts admins for anything it can catch; this is the last-resort
+      // net for a failure before/outside that (e.g. createRepo/createSender throwing).
+      console.error('[scheduled]', e);
+    }
   },
 } satisfies ExportedHandler<Env>;
