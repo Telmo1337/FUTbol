@@ -245,7 +245,8 @@ async function onCommand(
       if (!isAdmin(env, player?.tgUserId)) return ephemeral(M.notAdmin);
       const game = await repo.getCurrentGame(channelId);
       if (!game || game.status !== 'VOTING') return ephemeral(M.noActiveGame);
-      await games.closeVoting(sender, repo, game, now);
+      // Deliberate admin override — closes immediately even short of the minimum voter count.
+      await games.closeVoting(sender, repo, game, now, { forced: true });
       return ephemeral('Votação fechada ✅');
     }
 

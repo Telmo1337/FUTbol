@@ -67,6 +67,7 @@ export const M = {
   errMinGtCap: '⚠️ O mínimo de jogadores não pode ser maior que o máximo.',
   errBadDate: (line: string) => `⚠️ Não percebi a data: \`${esc(line)}\`. Usa o formato \`DD/MM HH:MM\`.`,
   errNoFutureSlots: '⚠️ Todas as datas estão no passado. Usa datas futuras.',
+  errDeadlineTooSoon: '⚠️ O fecho da votação tem de ser pelo menos 3h a partir de agora, para dar tempo ao grupo de votar.',
   errBadGoals: '⚠️ Os golos têm de ser números inteiros (0 ou mais).',
   gameAlreadyActive: '⚠️ Já existe um jogo ativo. Usa `/cancelar` antes de abrir outro.',
   noActiveGame: 'Não há nenhum jogo ativo. Abre um com `/novojogo`.',
@@ -75,6 +76,8 @@ export const M = {
   tieAdminPrompt: '🤝 **Empate na votação!** Admin, escolhe o horário.',
   tieResolvedNote: (label: string) => `✅ Horário escolhido: **${esc(label)}**`,
   votingExpired: '⏰ Todos os horários desta votação já passaram. Jogo cancelado — nova sondagem em breve.',
+  votingNotEnoughVoters: (voters: number, min: number) =>
+    `⏰ Passou 1 semana e só **${voters}/${min}** pessoas votaram. Sondagem cancelada — nova sondagem em breve.`,
 
   promoted: (who: string, when: string, loc: string) =>
     `${who}, abriu uma vaga — **estás dentro** para ${when}! 📍 ${esc(loc)}`,
