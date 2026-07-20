@@ -15,11 +15,10 @@ import {
   AUTO_OPEN_START_HOUR,
   DEFAULT_CAP_PLAYERS,
   DEFAULT_MIN_PLAYERS,
+  MIN_VOTE_WINDOW_MS,
   VOTE_LEAD_BEFORE_EARLIEST_MS,
   WEEKLY_LOCATION_NOTE,
 } from '../config';
-
-const HOUR_MS = 3_600_000;
 
 export interface WeeklyConfig {
   /** Channel to post the auto-game in. Empty string disables the feature. */
@@ -61,9 +60,11 @@ export async function maybeOpenNextGame(
       console.log('[auto] skip — only', slots.length, 'free slot(s) ahead');
       return;
     }
-    // Same default as /novojogo: deadline 6h before the earliest slot, clamped to the future.
+    // Same default as /novojogo: deadline 6h before the earliest slot, but never less than
+    // MIN_VOTE_WINDOW_MS from now — a same-day earliest slot must not squeeze the group's
+    // voting window down to something nobody has a real chance to see and respond to.
     let voteDeadline = slots[0].kickoffAt - VOTE_LEAD_BEFORE_EARLIEST_MS;
-    if (voteDeadline <= now) voteDeadline = now + HOUR_MS;
+    if (voteDeadline < now + MIN_VOTE_WINDOW_MS) voteDeadline = now + MIN_VOTE_WINDOW_MS;
 
     await games.createGame(api, repo, {
       chatId: cfg.channelId,

@@ -1,10 +1,8 @@
 // The /novojogo modal (a popup form) and the parser for what the admin submits.
 // Replaces v1's text-block parser: the same validation, fed by structured fields.
-import { DEFAULT_CAP_PLAYERS, DEFAULT_MIN_PLAYERS, VOTE_LEAD_BEFORE_EARLIEST_MS } from '../config';
+import { DEFAULT_CAP_PLAYERS, DEFAULT_MIN_PLAYERS, MIN_VOTE_WINDOW_MS, VOTE_LEAD_BEFORE_EARLIEST_MS } from '../config';
 import { formatWhen, parseDateTime } from '../core/time';
 import { M } from '../messages';
-
-const HOUR = 3_600_000;
 
 export interface ParsedNovoJogo {
   locationNote: string;
@@ -65,6 +63,9 @@ export function parseNovoJogoFields(f: NovoJogoFields, now: number): ParsedNovoJ
   if (f.deadline && f.deadline.trim()) {
     const ts = parseDateTime(f.deadline, now);
     if (ts == null) return { error: M.errBadDate(f.deadline) };
+    // An explicit deadline that's already (near) past would close voting almost immediately —
+    // reject it outright instead of silently "fixing" it to some other time behind the admin's back.
+    if (ts < now + MIN_VOTE_WINDOW_MS) return { error: M.errDeadlineTooSoon };
     voteDeadline = ts;
   }
 
@@ -72,8 +73,10 @@ export function parseNovoJogoFields(f: NovoJogoFields, now: number): ParsedNovoJ
   const future = slots.filter((s) => s.kickoffAt > now);
   if (future.length < 2) return { error: M.errNoFutureSlots };
 
-  if (voteDeadline == null) voteDeadline = future[0].kickoffAt - VOTE_LEAD_BEFORE_EARLIEST_MS;
-  if (voteDeadline <= now) voteDeadline = now + HOUR;
+  if (voteDeadline == null) {
+    voteDeadline = future[0].kickoffAt - VOTE_LEAD_BEFORE_EARLIEST_MS;
+    if (voteDeadline < now + MIN_VOTE_WINDOW_MS) voteDeadline = now + MIN_VOTE_WINDOW_MS;
+  }
   const locationNote = f.local && f.local.trim() ? f.local.trim() : '(local a combinar)';
 
   return { locationNote, minPlayers, capPlayers, voteDeadline, slots: future };

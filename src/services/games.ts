@@ -5,7 +5,7 @@ import type { Repo } from '../db/repo';
 import type { Game, RsvpStatus, Slot, Vote } from '../types';
 import { M } from '../messages';
 import { esc, mention } from '../util';
-import { CHECKIN_WINDOW_MS, GROUP_PING, GROUP_PING_MENTIONS, RSVP_CLOSE_BEFORE_KICKOFF_MS } from '../config';
+import { CHECKIN_WINDOW_MS, GROUP_PING, GROUP_PING_MENTIONS, RSVP_CLOSE_BEFORE_KICKOFF_MS, VOTE_MAX_WAIT_MS } from '../config';
 import { countVoters, pickWinner, tallyVotes } from '../core/voting';
 import { confirmedIds, splitSquad } from '../core/rsvp';
 import { dueNudges } from '../core/nudges';
@@ -173,7 +173,16 @@ export function tieOptions(slots: Slot[], votes: Vote[], now: number): Slot[] {
   return winner ? [winner] : tied;
 }
 
-export async function closeVoting(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
+/** VOTING → RSVP_OPEN/TIEBREAK/CANCELLED once the deadline passes. `forced` is the admin's
+ *  explicit /fecharvotacao override — it always closes immediately, ignoring both the voter
+ *  minimum and the 1-week cap below. A time-driven (tick) call additionally requires at least
+ *  `game.minPlayers` DISTINCT voters (one person voting on several days still counts once —
+ *  see core/voting.ts countVoters) before locking in a date; short of that, it's a silent
+ *  no-op and the tick just retries every minute past the deadline until enough people have
+ *  weighed in. Without this, a slot could be decided by 1-2 early voters minutes after the
+ *  poll opens. That wait isn't open-ended, though: past VOTE_MAX_WAIT_MS since the poll opened,
+ *  it gives up and cancels outright rather than leaving the group stuck on a dead poll. */
+export async function closeVoting(api: Sender, repo: Repo, game: Game, now: number, opts?: { forced?: boolean }): Promise<void> {
   if (game.status !== 'VOTING') return;
   const slots = await repo.getSlots(game.id);
   const votes = await repo.getVotes(game.id);
@@ -181,10 +190,22 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
 
   // Processed too late (or the poll's dates were never in the future to begin with) — every
   // slot has already passed. Plain CANCELLED (not CANCELLED_ADMIN) so the cron can relaunch.
+  // Always allowed, regardless of turnout — there's nothing left to wait for more voters on.
   if (future.length === 0) {
     if (!(await repo.transitionStatus(game.id, 'VOTING', 'CANCELLED', now))) return;
     if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
     await send(api, game.chatId, M.votingExpired);
+    return;
+  }
+
+  const voterCount = countVoters(votes);
+  if (!opts?.forced && voterCount < game.minPlayers) {
+    // Been waiting a full week for enough votes and still short — stop waiting.
+    if (now - game.createdAt >= VOTE_MAX_WAIT_MS) {
+      if (!(await repo.transitionStatus(game.id, 'VOTING', 'CANCELLED', now))) return;
+      if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
+      await send(api, game.chatId, M.votingNotEnoughVoters(voterCount, game.minPlayers));
+    }
     return;
   }
 

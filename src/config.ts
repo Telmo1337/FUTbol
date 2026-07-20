@@ -52,6 +52,17 @@ export const PERFECT_RECORD_MIN_GAMES = 5;
 /** If the admin gives no vote deadline, default to this long before the earliest slot. */
 export const VOTE_LEAD_BEFORE_EARLIEST_MS = 6 * HOUR;
 
+/** However soon the earliest free slot is, never give the group less than this long to vote —
+ *  otherwise a same-day slot can push the computed deadline into the past (or, for the
+ *  auto-open path, into a near-useless 1h fallback), closing the poll before anyone sees it. */
+export const MIN_VOTE_WINDOW_MS = 3 * HOUR;
+
+/** Once the deadline passes, closeVoting waits for at least `minPlayers` distinct voters
+ *  before locking in a date (see closeVoting) — but not forever: past this long since the poll
+ *  opened, it gives up and cancels outright (plain CANCELLED, so the cron can relaunch with
+ *  fresh availability) rather than leaving the group stuck on a dead poll. */
+export const VOTE_MAX_WAIT_MS = 7 * 24 * HOUR;
+
 /** Nudge timing windows, measured before rsvp_close_at. */
 export const SHORT_WARN_BEFORE_CLOSE_MS = 6 * HOUR;
 export const NONRESP_PING_BEFORE_CLOSE_MS = 12 * HOUR;
