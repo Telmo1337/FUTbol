@@ -3,7 +3,7 @@
 // User/channel ids are strings here, exactly like real Discord snowflakes.
 // Run with: npm run selftest   (no Discord token needed)
 import { getPlatformProxy } from 'wrangler';
-import type { Env } from '../src/types';
+import type { Env, Game } from '../src/types';
 import type { Sender } from '../src/discord/rest';
 import { createRepo } from '../src/db/repo';
 import * as games from '../src/services/games';
@@ -39,11 +39,14 @@ import { parsePriceField } from '../src/discord/payments';
 import { renderCapturePanel } from '../src/render/capture-message';
 import { renderResultCard, renderTeamsBoard } from '../src/render/teams-message';
 import { seedTestGame } from '../src/services/testseed';
+import type { Repo } from '../src/db/repo';
+import { M } from '../src/messages';
 import { loadHistory } from '../src/services/history';
 import { renderComparison, renderPersonalCard, renderStats, renderTopScorers } from '../src/render/stats-message';
-import { assistsEnabled, golosEnabled, pagamentosEnabled, formatEuros } from '../src/util';
+import { assistsEnabled, golosEnabled, pagamentosEnabled, formatEuros, esc, parseAdminIds } from '../src/util';
 import { renderHistory } from '../src/render/history-message';
 import { capturePanelComponents, historyComponents, parseCb } from '../src/discord/components';
+import { parseNovoJogoFields } from '../src/discord/novojogo';
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -100,6 +103,32 @@ check('formatDay: pt-PT short label', formatDay(NOW) === 'Seg, 15 jun');
 check('formatWhen: pt-PT short + time', formatWhen(NOW) === 'Seg, 15 jun · 13:00');
 check('formatMonth: pt-PT long lowercase', formatMonth(NOW) === 'junho');
 check('discordTs: native live timestamp tag (seconds + style)', /^<t:\d+:R>$/.test(discordTs(NOW)) && discordTs(NOW, 'F') === `<t:${Math.floor(NOW / 1000)}:F>`);
+
+// --- validation hardening: parseDateTime rejects impossible calendar days ---
+check('parseDateTime rejects 30 February', parseDateTime('30/02 21:00', NOW) === null);
+check('parseDateTime rejects 31 April', parseDateTime('31/04/2026 20:00', NOW) === null);
+check('parseDateTime rejects 29 Feb in a non-leap year', parseDateTime('29/02/2027 20:00', NOW) === null);
+check('parseDateTime accepts 29 Feb in a leap year', parseDateTime('29/02/2028 20:00', NOW) !== null);
+
+// --- validation hardening: /novojogo "Jogadores" field rejects 0 and junk ---
+const baseNovoFields = { slots: '20/06 18:00\n21/06 18:00' };
+check('parseNovoJogoFields rejects "0" players', 'error' in parseNovoJogoFields({ ...baseNovoFields, players: '0' }, NOW));
+check('parseNovoJogoFields rejects "0-14" players', 'error' in parseNovoJogoFields({ ...baseNovoFields, players: '0-14' }, NOW));
+check('parseNovoJogoFields rejects junk players ("x10")', 'error' in parseNovoJogoFields({ ...baseNovoFields, players: 'x10' }, NOW));
+check('parseNovoJogoFields accepts "10-14"', !('error' in parseNovoJogoFields({ ...baseNovoFields, players: '10-14' }, NOW)));
+
+// --- esc(): masked-link injection closed + ping defang still works ---
+check(
+  'esc: escapes markdown link syntax (no masked link)',
+  esc('[clica aqui](https://evil.example)') === '\\[clica aqui\\]\\(https://evil.example\\)',
+);
+check('esc: defangs @everyone', !esc('@everyone').includes('@everyone'));
+check('esc: defangs a raw mention', !esc('<@123456>').includes('<@'));
+
+// --- parseAdminIds: trims, dedupes, tolerant of undefined/empty parts ---
+const parsedAdminIds = parseAdminIds(' 1, 2,,3 ,2');
+check('parseAdminIds: parses + trims + dedupes', parsedAdminIds.size === 3 && parsedAdminIds.has('1') && parsedAdminIds.has('2') && parsedAdminIds.has('3'));
+check('parseAdminIds: undefined → empty set', parseAdminIds(undefined).size === 0);
 
 // vote board shows who voted what (names listed under each slot)
 const demoSlots = [{ id: 7, gameId: 1, kickoffAt: NOW, label: 'Sáb 18:00', sortOrder: 0 }];
@@ -852,6 +881,245 @@ check(
   '/cancelar on TIEBREAK: disarms the (still-live) tie prompt',
   editsFor(repostGame.tieMsgId!).some((e) => e.componentsCleared),
 );
+
+// --- guarded state transitions: a stale-snapshot double-writer (the tick racing an admin
+// command, or two overlapping ticks) must only fire its side effects (board post/edit,
+// pings) ONCE. Each scenario below drives two calls with the SAME stale `game` object, exactly
+// how tick.ts and an interaction handler would each hold their own outdated read. ---
+
+// 1) repo.transitionStatus is the guard primitive itself: only the first matching call wins.
+const transChat = `trans-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: transChat, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 10,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+const transGame = (await repo.getCurrentGame(transChat))!;
+check('transitionStatus: guarded write succeeds from a matching status', (await repo.transitionStatus(transGame.id, 'VOTING', 'TIEBREAK', NOW)) === true);
+check('transitionStatus: a stale from-status no longer matches → false, no throw', (await repo.transitionStatus(transGame.id, 'VOTING', 'RSVP_OPEN', NOW)) === false);
+check('transitionStatus: array form matches on any of the given statuses', (await repo.transitionStatus(transGame.id, ['VOTING', 'TIEBREAK'], 'CANCELLED', NOW)) === true);
+check('transitionStatus: the losing calls never changed the row', (await repo.getGame(transGame.id))!.status === 'CANCELLED');
+
+// 2) closeVoting's tie branch (VOTING → TIEBREAK): a second stale call must not post a second
+//    tie prompt (this is exactly the PR #29 orphaned-live-button incident, generalized).
+const tieRaceChat = `tie-race-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: tieRaceChat, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 10,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+const tieRaceGame = (await repo.getCurrentGame(tieRaceChat))!;
+const [traA, traB] = await repo.getSlots(tieRaceGame.id);
+await games.handleVote(sender, repo, tieRaceGame.id, traA.id, '1', NOW); // 1-1 tie
+await games.handleVote(sender, repo, tieRaceGame.id, traB.id, '2', NOW);
+const sentBeforeTieRace = sent.length;
+await games.closeVoting(sender, repo, tieRaceGame, NOW + DAY + 1); // both calls see the same stale VOTING snapshot
+await games.closeVoting(sender, repo, tieRaceGame, NOW + DAY + 1);
+check(
+  'closeVoting tie branch: a stale double-call posts exactly one tie prompt',
+  sent.slice(sentBeforeTieRace).filter((m) => m.text.includes('Empate na votação')).length === 1,
+);
+
+// Build a shared LOCKED-then-CHECKIN_OPEN fixture for the closeRsvp / openCheckin / closeCheckin
+// double-call races below.
+async function fixtureToCheckinOpen(chatId: string): Promise<Game> {
+  await games.createGame(sender, repo, {
+    chatId, createdBy: '1', locationNote: 'X', minPlayers: 1, capPlayers: 5,
+    voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+  });
+  let g = (await repo.getCurrentGame(chatId))!;
+  const [fSlotA] = await repo.getSlots(g.id);
+  await games.handleVote(sender, repo, g.id, fSlotA.id, '1', NOW);
+  await games.closeVoting(sender, repo, g, NOW + DAY + 1);
+  g = (await repo.getGame(g.id))!;
+  await games.handleRsvp(sender, repo, g.id, '1', 'IN', NOW + DAY + 1);
+  g = (await repo.getGame(g.id))!;
+  await games.closeRsvp(sender, repo, g, g.rsvpCloseAt! + 1);
+  g = (await repo.getGame(g.id))!;
+  await games.openCheckin(sender, repo, g, NOW + DAY + 5);
+  return (await repo.getGame(g.id))!;
+}
+
+// 3) closeRsvp (RSVP_OPEN → LOCKED): a stale double-call posts exactly one "Equipa final".
+const rsvpRaceChat = `rsvp-close-race-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: rsvpRaceChat, createdBy: '1', locationNote: 'X', minPlayers: 1, capPlayers: 5,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+let rsvpRaceGame = (await repo.getCurrentGame(rsvpRaceChat))!;
+const [rrSlotA] = await repo.getSlots(rsvpRaceGame.id);
+await games.handleVote(sender, repo, rsvpRaceGame.id, rrSlotA.id, '1', NOW);
+await games.closeVoting(sender, repo, rsvpRaceGame, NOW + DAY + 1);
+rsvpRaceGame = (await repo.getGame(rsvpRaceGame.id))!;
+await games.handleRsvp(sender, repo, rsvpRaceGame.id, '1', 'IN', NOW + DAY + 1);
+rsvpRaceGame = (await repo.getGame(rsvpRaceGame.id))!;
+const sentBeforeRsvpRace = sent.length;
+await games.closeRsvp(sender, repo, rsvpRaceGame, rsvpRaceGame.rsvpCloseAt! + 1); // same stale RSVP_OPEN snapshot twice
+await games.closeRsvp(sender, repo, rsvpRaceGame, rsvpRaceGame.rsvpCloseAt! + 2);
+check(
+  'closeRsvp: a stale double-call posts exactly one "Equipa final"',
+  sent.slice(sentBeforeRsvpRace).filter((m) => m.text.includes('Equipa final')).length === 1,
+);
+
+// 4) openCheckin (LOCKED → CHECKIN_OPEN): a stale double-call posts exactly one check-in board
+//    and one squad ping.
+const checkinOpenRaceChat = `checkin-open-race-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: checkinOpenRaceChat, createdBy: '1', locationNote: 'X', minPlayers: 1, capPlayers: 5,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+let corGame = (await repo.getCurrentGame(checkinOpenRaceChat))!;
+const [corSlotA] = await repo.getSlots(corGame.id);
+await games.handleVote(sender, repo, corGame.id, corSlotA.id, '1', NOW);
+await games.closeVoting(sender, repo, corGame, NOW + DAY + 1);
+corGame = (await repo.getGame(corGame.id))!;
+await games.handleRsvp(sender, repo, corGame.id, '1', 'IN', NOW + DAY + 1);
+corGame = (await repo.getGame(corGame.id))!;
+await games.closeRsvp(sender, repo, corGame, corGame.rsvpCloseAt! + 1);
+corGame = (await repo.getGame(corGame.id))!; // still LOCKED — the stale snapshot both racers hold
+const sentBeforeCOR = sent.length;
+await games.openCheckin(sender, repo, corGame, NOW + DAY + 5);
+await games.openCheckin(sender, repo, corGame, NOW + DAY + 5);
+check(
+  'openCheckin: a stale double-call posts exactly one check-in board',
+  sent.slice(sentBeforeCOR).filter((m) => m.text.includes('Hora do jogo')).length === 1,
+);
+
+// 5) closeCheckin (CHECKIN_OPEN → PLAYED): a stale double-call (the tick racing the admin's
+//    /resultado submit — the scenario this fix targets) posts exactly one recap.
+const ccChat = `checkin-close-race-${Date.now()}`;
+const ccGame = await fixtureToCheckinOpen(ccChat);
+const sentBeforeCC = sent.length;
+await games.closeCheckin(sender, repo, ccGame, NOW + DAY + 10); // same stale CHECKIN_OPEN snapshot twice
+await games.closeCheckin(sender, repo, ccGame, NOW + DAY + 11);
+check(
+  'closeCheckin: a stale double-call posts exactly one recap',
+  sent.slice(sentBeforeCC).filter((m) => m.text.includes('Resumo —')).length === 1,
+);
+check('closeCheckin: the game only ends up PLAYED once (no error from the second call)', (await repo.getGame(ccGame.id))!.status === 'PLAYED');
+
+// 6) toggleVote: a concurrent double-tap on the same (empty) slot must never throw a PK
+//    violation — the losing insert is a silent no-op.
+const tvChat = `toggle-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: tvChat, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 10,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+const tvGame = (await repo.getCurrentGame(tvChat))!;
+const [tvSlotA] = await repo.getSlots(tvGame.id);
+let toggleThrew = false;
+try {
+  await Promise.all([repo.toggleVote(tvGame.id, tvSlotA.id, 'v1', NOW), repo.toggleVote(tvGame.id, tvSlotA.id, 'v1', NOW)]);
+} catch {
+  toggleThrew = true;
+}
+check('toggleVote: concurrent double-add never throws', !toggleThrew);
+const afterToggleVotes = (await repo.getVotes(tvGame.id)).filter((v) => v.tgUserId === 'v1');
+check('toggleVote: exactly one vote row survives the race', afterToggleVotes.length === 1);
+check('toggleVote: a further toggle still removes it cleanly', (await repo.toggleVote(tvGame.id, tvSlotA.id, 'v1', NOW)) === 'removed');
+check('toggleVote: toggling again re-adds it', (await repo.toggleVote(tvGame.id, tvSlotA.id, 'v1', NOW)) === 'added');
+
+// --- team-select isolation: the two independent Alpha/Beta selects must not clobber each
+// other's write (the old design read-modify-wrote the WHOLE result_teams set per submit). ---
+const tsChat = `teamsplit-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: tsChat, createdBy: '1', locationNote: 'X', minPlayers: 1, capPlayers: 5,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+let tsGame = (await repo.getCurrentGame(tsChat))!;
+const [tsSlotA] = await repo.getSlots(tsGame.id);
+await games.handleVote(sender, repo, tsGame.id, tsSlotA.id, '1', NOW);
+await games.closeVoting(sender, repo, tsGame, NOW + DAY + 1);
+tsGame = (await repo.getGame(tsGame.id))!;
+for (const uid of ['1', '2', '3']) await games.handleRsvp(sender, repo, tsGame.id, uid, 'IN', NOW + DAY + 1);
+tsGame = (await repo.getGame(tsGame.id))!;
+await games.closeRsvp(sender, repo, tsGame, tsGame.rsvpCloseAt! + 1);
+tsGame = (await repo.getGame(tsGame.id))!;
+
+await applyTeamSelect(repo, tsGame, 'A', ['1']);
+await applyTeamSelect(repo, tsGame, 'B', ['2', '3']);
+let tsState = await loadTeamsState(repo, tsGame);
+check('team-select: two sequential single-side selects → Alpha=1, Beta=2', tsState.aIds.size === 1 && tsState.aIds.has('1') && tsState.bIds.size === 2);
+
+// Concurrent Alpha + Beta submits (two independent admin panel selects fired close together).
+await Promise.all([applyTeamSelect(repo, tsGame, 'A', ['1']), applyTeamSelect(repo, tsGame, 'B', ['2', '3'])]);
+tsState = await loadTeamsState(repo, tsGame);
+check('team-select: concurrent Alpha + Beta submits both survive (no lost update)', tsState.aIds.size === 1 && tsState.bIds.size === 2);
+
+// Cross-pick: claiming user 2 for Alpha pulls them off Beta.
+await applyTeamSelect(repo, tsGame, 'A', ['1', '2']);
+tsState = await loadTeamsState(repo, tsGame);
+check('team-select: claiming a player for one side pulls them off the other', tsState.aIds.has('2') && !tsState.bIds.has('2') && tsState.bIds.size === 1);
+
+// --- payments eligibility union: confirmed squad ∪ checked-in ∪ team-assigned, so a waitlist
+// sub who actually showed up (checked in) can be marked paid too. ---
+const puChat = `payunion-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: puChat, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 2,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+let puGame = (await repo.getCurrentGame(puChat))!;
+const [puSlotA] = await repo.getSlots(puGame.id);
+await games.handleVote(sender, repo, puGame.id, puSlotA.id, '1', NOW);
+await games.closeVoting(sender, repo, puGame, NOW + DAY + 1);
+puGame = (await repo.getGame(puGame.id))!;
+for (const uid of ['1', '2', '3']) await games.handleRsvp(sender, repo, puGame.id, uid, 'IN', NOW + DAY + 1 + Number(uid)); // cap 2 → 3 waitlisted
+const puSplit = splitSquad(await repo.getRsvps(puGame.id), puGame.capPlayers);
+check('pay union setup: cap 2 → 2 confirmed, user 3 waitlisted', puSplit.confirmed.length === 2 && puSplit.waitlist.some((r) => r.tgUserId === '3'));
+puGame = (await repo.getGame(puGame.id))!;
+await games.closeRsvp(sender, repo, puGame, puGame.rsvpCloseAt! + 1);
+puGame = (await repo.getGame(puGame.id))!;
+await games.openCheckin(sender, repo, puGame, NOW + DAY + 5);
+puGame = (await repo.getGame(puGame.id))!;
+// The waitlisted sub shows up and taps Cheguei — allowed (handleCheckin only requires status
+// IN, not "confirmed"), exactly how a real late sub ends up eligible but off the RSVP snapshot.
+const puCheckinToast = await games.handleCheckin(sender, repo, puGame.id, '3', NOW + DAY + 6);
+check('pay union: a waitlisted-but-IN sub can still self check-in', puCheckinToast === M.cb.checkinDone);
+let puPayState = await loadPaymentState(repo, (await repo.getGame(puGame.id))!);
+check('pay union: the checked-in waitlist sub is eligible to pay (3 players, not 2)', puPayState.players.length === 3 && puPayState.players.some((p) => p.tgUserId === '3'));
+await repo.setGamePrice(puGame.id, 500, NOW);
+puPayState = await loadPaymentState(repo, (await repo.getGame(puGame.id))!);
+check('pay union: expected total scales to all 3 eligible payers (15,00€)', renderPaymentBoard(puPayState).includes('15,00€'));
+await setPaidSet(repo, (await repo.getGame(puGame.id))!, ['3'], NOW);
+check('pay union: the checked-in waitlist sub can be marked paid', (await loadPaymentState(repo, (await repo.getGame(puGame.id))!)).paid.has('3'));
+// A team-assigned outsider (e.g. from seeded/historical data written outside the RSVP flow) is
+// eligible too — loadPaymentState must stay correct even when result_teams has rows RSVP never saw.
+await repo.setTeamSide(puGame.id, 'A', ['outsider1']);
+puPayState = await loadPaymentState(repo, (await repo.getGame(puGame.id))!);
+check('pay union: a team-assigned outsider is eligible too', puPayState.players.some((p) => p.tgUserId === 'outsider1'));
+
+// --- late RSVP: a lock landing in the exact window between handleRsvp's write and its
+// completion must be caught by the post-write freshness re-read, not re-arm a locked board. ---
+const raceChat = `rsvp-write-race-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: raceChat, createdBy: '1', locationNote: 'X', minPlayers: 1, capPlayers: 5,
+  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+let raceGame = (await repo.getCurrentGame(raceChat))!;
+const [raceSlotA] = await repo.getSlots(raceGame.id);
+await games.handleVote(sender, repo, raceGame.id, raceSlotA.id, '1', NOW);
+await games.closeVoting(sender, repo, raceGame, NOW + DAY + 1);
+raceGame = (await repo.getGame(raceGame.id))!;
+await games.handleRsvp(sender, repo, raceGame.id, '1', 'IN', NOW + DAY + 1);
+raceGame = (await repo.getGame(raceGame.id))!;
+
+// A repo wrapper that closes RSVP the instant the write lands — simulating the tick winning
+// the race in the exact window handleRsvp's fresh re-read exists to catch.
+let raceClosed = false;
+const racyRepo: Repo = {
+  ...repo,
+  async setRsvp(gameId, tgUserId, status, now) {
+    const result = await repo.setRsvp(gameId, tgUserId, status, now);
+    if (!raceClosed) {
+      raceClosed = true;
+      await repo.transitionStatus(gameId, 'RSVP_OPEN', 'LOCKED', now);
+    }
+    return result;
+  },
+};
+const editsBeforeRace = edits.length;
+const raceToast = await games.handleRsvp(sender, racyRepo, raceGame.id, '2', 'IN', NOW + DAY + 2);
+check('handleRsvp: a lock landing mid-write is caught by the post-write re-read', raceToast === M.cb.rsvpClosed);
+check('handleRsvp: no board re-render once the fresh re-read finds it already locked', edits.length === editsBeforeRace);
+check('handleRsvp: the RSVP row itself was still written (not rolled back, just not re-rendered)', (await repo.getRsvps(raceGame.id)).some((r) => r.tgUserId === '2'));
 
 console.log(`\n${failures === 0 ? '🎉 All checks passed' : `💥 ${failures} check(s) failed`}`);
 await proxy.dispose();

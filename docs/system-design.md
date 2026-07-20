@@ -41,7 +41,7 @@ Estados (`src/types.ts`):
 | `PLAYED` | Janela fechada; fantasmas atribuídos; stats finais | terminal |
 | `CANCELLED` | Cancelado por falta de gente ou por `/cancelar` | terminal |
 
-`PLAYED` e `CANCELLED` são terminais (`TERMINAL_STATUSES`). Os estados ativos — os que o tick
+`PLAYED`, `CANCELLED` e `CANCELLED_ADMIN` são terminais. Os estados ativos — os que o tick
 processa — são `VOTING`, `TIEBREAK`, `RSVP_OPEN`, `LOCKED`, `CHECKIN_OPEN` (`GAME_STATUSES_ACTIVE`
 em `src/config.ts`).
 

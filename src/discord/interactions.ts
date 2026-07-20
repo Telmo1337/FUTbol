@@ -5,14 +5,19 @@
 // Response types:    1 PONG · 4 message (+flags 64 = ephemeral) · 9 modal.
 //
 // Button clicks reply with an ephemeral "toast" (only the tapper sees it); the live
-// board itself is edited via REST inside the engine call. All work is awaited before we
-// respond — fast at this scale; if a handler ever nears Discord's 3s limit, switch that
-// branch to a deferred response (type 5) + a follow-up.
+// board itself is edited via REST inside the engine call. Admin panels/modals/commands are
+// synchronous (all work awaited before responding — fast enough at this scale). The three
+// public, high-traffic buttons (vote, rsvp, checkin) can do several sequential Discord REST
+// calls each (promotions, board edits, nudges), any of which can eat into Discord's 3s
+// response deadline if a 429 backoff kicks in — so those ack immediately and do the real work
+// in ctx.waitUntil, editing the deferred reply with the toast once it's done (see deferReply).
 import type { Env } from '../types';
 import type { Repo } from '../db/repo';
 import type { Sender } from './rest';
+import { editInteractionReply } from './rest';
 import { M } from '../messages';
 import { assistsEnabled, golosEnabled, pagamentosEnabled, parseAdminIds } from '../util';
+import { alertAdmins } from '../services/alerts';
 import { capturePanelComponents, historyComponents, parseCb, paymentPanelComponents, teamsPanelComponents } from './components';
 import { boardEmbed, COLORS } from './embeds';
 import { NOVOJOGO_MODAL, parseNovoJogoFields } from './novojogo';
@@ -42,6 +47,8 @@ interface DiscordUser {
 interface Interaction {
   type: number;
   channel_id?: string;
+  application_id?: string;
+  token?: string;
   member?: { user?: DiscordUser; nick?: string | null };
   user?: DiscordUser;
   message?: { id: string };
@@ -103,8 +110,42 @@ const modal = (data: object) => reply({ type: 9, data });
 // Type 6 = DEFERRED_UPDATE_MESSAGE: silently acknowledge a component tap (no toast, no
 // loading state). We edit the live board separately over REST.
 const silentAck = () => reply({ type: 6 });
+// Type 5 = DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE: shows an ephemeral "thinking…" placeholder
+// immediately; the real content lands later via editInteractionReply (see deferReply below).
+const deferredEphemeral = () => reply({ type: 5, data: { flags: 64 } });
 // Type 7 = UPDATE_MESSAGE: edit the message the tapped component lives on (the private panel).
 const updateMsg = (data: object) => reply({ type: 7, data });
+
+/** Fire-and-forget: run `work` after we've already responded with a silent ack (vote taps —
+ *  there's no per-tapper toast to show, the board itself is the feedback). Any failure is
+ *  logged and DMed to admins, since there's no user-visible surface left to report it on. */
+function background(ctx: ExecutionContext, env: Env, work: () => Promise<void>): void {
+  ctx.waitUntil(
+    work().catch((e) => {
+      console.error('[deferred]', e);
+      return alertAdmins(env, M.alert.interactionFailed(String(e)));
+    }),
+  );
+}
+
+/** Defer a component reply: the caller already sent deferredEphemeral() (a "thinking…"
+ *  placeholder); this runs `work` and edits that placeholder with the toast it returns (empty
+ *  string → the default ✅). On failure, edits in a generic error and alerts admins — same
+ *  "never fail silently" guarantee the tick already has. */
+function deferReply(ctx: ExecutionContext, env: Env, i: Interaction, work: () => Promise<string>): void {
+  ctx.waitUntil(
+    (async () => {
+      try {
+        const toast = await work();
+        if (i.application_id && i.token) await editInteractionReply(i.application_id, i.token, toast || '✅');
+      } catch (e) {
+        console.error('[deferred]', e);
+        if (i.application_id && i.token) await editInteractionReply(i.application_id, i.token, M.cb.error);
+        await alertAdmins(env, M.alert.interactionFailed(String(e)));
+      }
+    })(),
+  );
+}
 
 /** An ephemeral 📜 history page: embed + the ◀️/▶️ row (omitted on a single page). */
 function historyData(view: HistoryView): object {
@@ -145,7 +186,13 @@ async function paymentPanelData(repo: Repo, game: Game): Promise<object> {
   };
 }
 
-export async function handleInteraction(i: Interaction, env: Env, repo: Repo, sender: Sender): Promise<Response> {
+export async function handleInteraction(
+  i: Interaction,
+  env: Env,
+  repo: Repo,
+  sender: Sender,
+  ctx: ExecutionContext,
+): Promise<Response> {
   if (i.type === 1) return pong();
 
   const now = Date.now();
@@ -155,7 +202,7 @@ export async function handleInteraction(i: Interaction, env: Env, repo: Repo, se
 
   try {
     if (i.type === 2) return await onCommand(i, env, repo, sender, player, channelId, now);
-    if (i.type === 3) return await onComponent(i, env, repo, sender, player, channelId, now);
+    if (i.type === 3) return await onComponent(i, env, repo, sender, player, channelId, now, ctx);
     if (i.type === 5) return await onModal(i, env, repo, sender, player, channelId, now);
   } catch (e) {
     console.error('[interaction]', e);
@@ -301,13 +348,17 @@ async function onComponent(
   player: Player | null,
   channelId: string,
   now: number,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   const parsed = i.data?.custom_id ? parseCb(i.data.custom_id) : null;
   if (!parsed || !player) return ephemeral(M.cb.error);
 
   // A vote tap gets a silent ACK — no per-tapper toast; the board itself shows who voted what.
+  // The DB write + board re-render happen after we've responded (deferred), so a slow REST
+  // round-trip (e.g. a 429 backoff) can't blow Discord's 3s response deadline.
   if (parsed.kind === 'vote') {
-    await games.handleVote(sender, repo, parsed.gameId, parsed.slotId, player.tgUserId, now);
+    const { gameId, slotId } = parsed;
+    background(ctx, env, () => games.handleVote(sender, repo, gameId, slotId, player.tgUserId, now));
     return silentAck();
   }
 
@@ -405,10 +456,22 @@ async function onComponent(
     return modal(resultModal(game.id));
   }
 
-  let ack = '';
+  // Rsvp + checkin: the toast can take several sequential REST calls to produce (promotion
+  // pings, a board edit, up to 3 nudge sends) — defer so the user sees "thinking…" instead of
+  // risking a 3s-deadline "interaction failed" while the work is still genuinely succeeding.
   if (parsed.kind === 'rsvp') {
-    ack = await games.handleRsvp(sender, repo, parsed.gameId, player.tgUserId, parsed.status, now);
-  } else if (parsed.kind === 'tie') {
+    const { gameId, status } = parsed;
+    deferReply(ctx, env, i, () => games.handleRsvp(sender, repo, gameId, player.tgUserId, status, now));
+    return deferredEphemeral();
+  }
+  if (parsed.kind === 'checkin') {
+    const { gameId } = parsed;
+    deferReply(ctx, env, i, () => games.handleCheckin(sender, repo, gameId, player.tgUserId, now));
+    return deferredEphemeral();
+  }
+
+  let ack = '';
+  if (parsed.kind === 'tie') {
     if (!isAdmin(env, player.tgUserId)) ack = M.cb.onlyAdmin;
     else {
       const outcome = await games.resolveTie(sender, repo, parsed.gameId, parsed.slotId, now);
@@ -421,8 +484,6 @@ async function onComponent(
               ? M.cb.tieAlreadyResolved
               : M.cb.error;
     }
-  } else if (parsed.kind === 'checkin') {
-    ack = await games.handleCheckin(sender, repo, parsed.gameId, player.tgUserId, now);
   } else if (parsed.kind === 'unghost') {
     if (!isAdmin(env, player.tgUserId)) ack = M.cb.onlyAdmin;
     else if (!i.message) ack = M.cb.error;

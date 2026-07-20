@@ -122,6 +122,9 @@ export function createRepo(d1: D1Database) {
       await db.update(games).set({ tieMsgId: msgId, updatedAt: now }).where(eq(games.id, id)).run();
     },
 
+    /** Unguarded write — only for CANCELLED paths and the openRsvp revert-on-failed-post.
+     *  State-machine edges (VOTING/TIEBREAK/RSVP_OPEN/CHECKIN_OPEN transitions) must use
+     *  transitionStatus/lockWinner/openCheckin instead, so a double-writer can't double-fire. */
     async setStatus(id: number, status: GameStatus, now: number): Promise<void> {
       await db.update(games).set({ status, updatedAt: now }).where(eq(games.id, id)).run();
     },
@@ -136,13 +139,29 @@ export function createRepo(d1: D1Database) {
       return (res.meta?.changes ?? 0) > 0;
     },
 
-    /** LOCKED → CHECKIN_OPEN: kickoff has passed, start collecting "Cheguei ✅". */
-    async openCheckin(id: number, checkinCloseAt: number, now: number): Promise<void> {
-      await db
-        .update(games)
-        .set({ status: 'CHECKIN_OPEN', checkinCloseAt, updatedAt: now })
-        .where(eq(games.id, id))
-        .run();
+    /** Guarded status transition: flips `from` → `to` only if the game is still in one of
+     *  `from`. Returns true only if THIS call made the move — a double-writer (the tick
+     *  racing an admin command, or two overlapping ticks) gets false and skips its side effects. */
+    async transitionStatus(id: number, from: GameStatus | GameStatus[], to: GameStatus, now: number): Promise<boolean> {
+      const froms = Array.isArray(from) ? from : [from];
+      const res = (await db.run(
+        sql`UPDATE games SET status = ${to}, updated_at = ${now}
+            WHERE id = ${id} AND status IN (${sql.join(
+              froms.map((f) => sql`${f}`),
+              sql`, `,
+            )})`,
+      )) as unknown as D1Result;
+      return (res.meta?.changes ?? 0) > 0;
+    },
+
+    /** Guarded write: LOCKED → CHECKIN_OPEN (kickoff has passed, start collecting "Cheguei ✅").
+     *  Returns false if another writer already opened check-in. */
+    async openCheckin(id: number, checkinCloseAt: number, now: number): Promise<boolean> {
+      const res = (await db.run(
+        sql`UPDATE games SET status = 'CHECKIN_OPEN', checkin_close_at = ${checkinCloseAt}, updated_at = ${now}
+            WHERE id = ${id} AND status = 'LOCKED'`,
+      )) as unknown as D1Result;
+      return (res.meta?.changes ?? 0) > 0;
     },
 
     async setCheckinMsg(id: number, msgId: string, now: number): Promise<void> {
@@ -178,6 +197,9 @@ export function createRepo(d1: D1Database) {
     },
 
     // ---------- votes ----------
+    /** Toggle this user's vote for a slot. The insert is conflict-safe: a fast double-tap
+     *  (two Worker invocations both seeing no existing row) can no longer throw a PK
+     *  violation — the losing insert is silently a no-op and both report 'added'. */
     async toggleVote(gameId: number, slotId: number, tgUserId: string, now: number): Promise<'added' | 'removed'> {
       const where = and(eq(votes.gameId, gameId), eq(votes.slotId, slotId), eq(votes.tgUserId, tgUserId));
       const existing = await db.select().from(votes).where(where).get();
@@ -185,7 +207,7 @@ export function createRepo(d1: D1Database) {
         await db.delete(votes).where(where).run();
         return 'removed';
       }
-      await db.insert(votes).values({ gameId, slotId, tgUserId, createdAt: now }).run();
+      await db.insert(votes).values({ gameId, slotId, tgUserId, createdAt: now }).onConflictDoNothing().run();
       return 'added';
     },
 
@@ -323,12 +345,32 @@ export function createRepo(d1: D1Database) {
         .where(eq(resultTeams.gameId, gameId));
     },
 
-    /** Overwrite the whole team assignment for a game (delete + insert). */
+    /** Overwrite the whole team assignment for a game (delete + insert). Only used for the
+     *  test-seed helper, which writes both sides in one shot — the live team panel (two
+     *  independent Alpha/Beta selects) uses setTeamSide instead, so concurrent submits
+     *  can't clobber each other. */
     async replaceTeams(gameId: number, rows: { tgUserId: string; side: ResultSide }[]): Promise<void> {
       await db.delete(resultTeams).where(eq(resultTeams.gameId, gameId)).run();
       if (rows.length > 0) {
         await db.insert(resultTeams).values(rows.map((r) => ({ gameId, tgUserId: r.tgUserId, side: r.side }))).run();
       }
+    },
+
+    /** Set ONE side's roster to exactly `ids`, leaving the other side untouched except
+     *  pulling off anyone now claimed by this side (a player can't be on both). Run as a
+     *  single D1 batch (atomic), so a concurrent submit on the other side's select can
+     *  never observe or clobber a half-applied state. */
+    async setTeamSide(gameId: number, side: ResultSide, ids: string[]): Promise<void> {
+      const clearSide = db.delete(resultTeams).where(and(eq(resultTeams.gameId, gameId), eq(resultTeams.side, side)));
+      if (ids.length === 0) {
+        await db.batch([clearSide]);
+        return;
+      }
+      const pullFromOtherSide = db
+        .delete(resultTeams)
+        .where(and(eq(resultTeams.gameId, gameId), inArray(resultTeams.tgUserId, ids)));
+      const insertSide = db.insert(resultTeams).values(ids.map((tgUserId) => ({ gameId, tgUserId, side })));
+      await db.batch([clearSide, pullFromOtherSide, insertSide]);
     },
 
     async saveResult(gameId: number, goalsA: number, goalsB: number, recordedBy: string, now: number): Promise<void> {

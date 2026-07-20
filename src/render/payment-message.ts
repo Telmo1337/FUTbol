@@ -1,12 +1,12 @@
 // Renders for the 💶 Pagamentos public board and the admin's private panel.
 // Text only — the interactions layer wraps it in an embed and attaches the select/buttons.
 import { M } from '../messages';
-import { esc, formatEuros } from '../util';
+import { formatEuros } from '../util';
 import { formatDay } from '../core/time';
+import { bulletList } from './list';
 import type { PaymentState } from '../services/payments';
 
-const list = (items: { displayName: string }[]): string =>
-  items.length === 0 ? M.pay.empty : items.map((p) => `• ${esc(p.displayName)}`).join('\n');
+const list = (items: { displayName: string }[]): string => bulletList(items, M.pay.empty);
 
 /** Price + collected/expected lines. Just the price-unset note when no price is set yet. */
 function totals(s: PaymentState): string[] {

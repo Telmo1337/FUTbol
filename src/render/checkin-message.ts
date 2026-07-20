@@ -1,6 +1,6 @@
 import { M } from '../messages';
-import { esc } from '../util';
 import { discordTs } from '../core/time';
+import { bulletList } from './list';
 
 export interface RenderCheckinOpts {
   winnerLabel: string;
@@ -9,8 +9,7 @@ export interface RenderCheckinOpts {
   checkinCloseAt: number | null;
 }
 
-const bullets = (items: { displayName: string }[]): string =>
-  items.length === 0 ? M.checkin.empty : items.map((p) => `• ${esc(p.displayName)}`).join('\n');
+const bullets = (items: { displayName: string }[]): string => bulletList(items, M.checkin.empty);
 
 export function renderCheckinBoard(o: RenderCheckinOpts): string {
   const parts: string[] = [M.checkin.title(o.winnerLabel), ''];

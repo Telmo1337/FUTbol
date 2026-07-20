@@ -10,9 +10,7 @@
 //   any (non-terminal) ──/cancelar───▶ CANCELLED_ADMIN   (a deliberate stop; cron won't auto-reopen)
 //
 // E = event-driven (a tap or command). T = time-driven (the tick reads now vs deadlines).
-import type { Game, GameStatus } from '../types';
-
-export const TERMINAL_STATUSES: GameStatus[] = ['PLAYED', 'CANCELLED', 'CANCELLED_ADMIN'];
+import type { Game } from '../types';
 
 export function isVotingExpired(game: Game, now: number): boolean {
   return game.status === 'VOTING' && now >= game.voteDeadline;

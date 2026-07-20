@@ -85,6 +85,20 @@ export async function createGame(
     voteDeadline: input.voteDeadline,
     now: input.now,
   });
+
+  // TOCTOU dedup: callers already check "no active game" before calling createGame, but that
+  // check-then-act isn't atomic — two overlapping callers (an admin's /novojogo racing the
+  // cron's auto-open, or two overlapping ticks) could both pass it and both insert a game.
+  // Cheap mitigation, not a full guarantee: getCurrentGame picks the highest-id active game
+  // in this chat deterministically, so exactly one caller "wins" and every other loses and
+  // rolls itself back here, before spending any Discord API calls.
+  const current = await repo.getCurrentGame(input.chatId);
+  if (current && current.id !== gameId) {
+    await repo.deleteGame(gameId).catch(() => {});
+    console.warn('[createGame] duplicate active game detected — rolled back', gameId);
+    return;
+  }
+
   try {
     await repo.addSlots(
       gameId,
@@ -168,7 +182,7 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
   // Processed too late (or the poll's dates were never in the future to begin with) — every
   // slot has already passed. Plain CANCELLED (not CANCELLED_ADMIN) so the cron can relaunch.
   if (future.length === 0) {
-    await repo.setStatus(game.id, 'CANCELLED', now);
+    if (!(await repo.transitionStatus(game.id, 'VOTING', 'CANCELLED', now))) return;
     if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
     await send(api, game.chatId, M.votingExpired);
     return;
@@ -178,7 +192,7 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
   if (winner) {
     await openRsvp(api, repo, game, winner, now);
   } else {
-    await repo.setStatus(game.id, 'TIEBREAK', now);
+    if (!(await repo.transitionStatus(game.id, 'VOTING', 'TIEBREAK', now))) return;
     if (game.voteMsgId) {
       const named = await repo.getVotesWithNames(game.id);
       const tieText = renderVoteTie(game.locationNote, tallyVotes(slots, votes), groupVoters(named));
@@ -245,7 +259,7 @@ export async function expireTiebreak(api: Sender, repo: Repo, game: Game, now: n
   if (game.status !== 'TIEBREAK') return;
   const slots = await repo.getSlots(game.id);
   if (slots.some((s) => s.kickoffAt > now)) return;
-  await repo.setStatus(game.id, 'CANCELLED', now);
+  if (!(await repo.transitionStatus(game.id, 'TIEBREAK', 'CANCELLED', now))) return;
   if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
   if (game.tieMsgId) await removeKeyboard(api, game.chatId, game.tieMsgId);
   await send(api, game.chatId, M.votingExpired);
@@ -267,6 +281,13 @@ export async function handleRsvp(
 
   const before = confirmedIds(await repo.getRsvps(gameId), game.capPlayers);
   await repo.setRsvp(gameId, userId, status, now);
+
+  // The write landed — but the tick (or an admin) may have closed RSVP in the meantime.
+  // Re-read before doing anything that assumes the board is still open, so a tap that
+  // lands right on the close doesn't re-attach live buttons to an already-LOCKED board.
+  const fresh = await repo.getGame(gameId);
+  if (!fresh || fresh.status !== 'RSVP_OPEN') return M.cb.rsvpClosed;
+
   const after = await repo.getRsvps(gameId);
   const afterConfirmed = confirmedIds(after, game.capPlayers);
 
@@ -280,7 +301,7 @@ export async function handleRsvp(
     }
   }
 
-  await rerenderRsvp(api, repo, game, 'open');
+  await rerenderRsvp(api, repo, fresh, 'open');
   await processNudges(api, repo, gameId, now);
 
   if (status === 'IN') return afterConfirmed.has(userId) ? M.cb.rsvpIn : M.cb.rsvpWait;
@@ -355,14 +376,14 @@ export async function closeRsvp(api: Sender, repo: Repo, game: Game, now: number
   const inCount = split.confirmed.length;
 
   if (inCount >= game.minPlayers) {
-    await repo.setStatus(game.id, 'LOCKED', now);
+    if (!(await repo.transitionStatus(game.id, 'RSVP_OPEN', 'LOCKED', now))) return;
     await rerenderRsvp(api, repo, { ...game, status: 'LOCKED' }, 'locked');
     const names = split.confirmed.map((p, i) => `${i + 1}. ${esc(p.displayName)}`).join('\n');
     await send(api, game.chatId, M.rsvpClosedFinal(winnerLabel, game.locationNote, names));
     // Auto-open the (public) team-formation board; the admin assigns teams privately.
     await postTeamsPlaceholder(api, repo, { ...game, status: 'LOCKED' }, now);
   } else {
-    await repo.setStatus(game.id, 'CANCELLED', now);
+    if (!(await repo.transitionStatus(game.id, 'RSVP_OPEN', 'CANCELLED', now))) return;
     await rerenderRsvp(api, repo, { ...game, status: 'CANCELLED' }, 'cancelled');
     await send(api, game.chatId, M.cancelledNotEnough(winnerLabel, inCount, game.minPlayers));
   }
@@ -443,7 +464,7 @@ export async function openCheckin(api: Sender, repo: Repo, game: Game, now: numb
   const winner = game.winningSlotId ? await repo.getSlot(game.winningSlotId) : null;
   if (!winner) return;
   const closeAt = winner.kickoffAt + CHECKIN_WINDOW_MS;
-  await repo.openCheckin(game.id, closeAt, now);
+  if (!(await repo.openCheckin(game.id, closeAt, now))) return;
 
   const split = splitSquad(await repo.getRsvps(game.id), game.capPlayers);
   if (split.confirmed.length > 0) {
@@ -485,7 +506,7 @@ async function rerenderCheckin(api: Sender, repo: Repo, game: Game): Promise<voi
 // CHECKIN_OPEN → PLAYED: window closed. Lock the board, assign ghosts, post the recap.
 export async function closeCheckin(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
   if (game.status !== 'CHECKIN_OPEN') return;
-  await repo.setStatus(game.id, 'PLAYED', now);
+  if (!(await repo.transitionStatus(game.id, 'CHECKIN_OPEN', 'PLAYED', now))) return;
   if (game.checkinMsgId) await removeKeyboard(api, game.chatId, game.checkinMsgId);
   await postRecap(api, repo, { ...game, status: 'PLAYED' });
 }
