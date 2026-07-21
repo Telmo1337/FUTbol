@@ -14,8 +14,9 @@ na linha). Os predicados estão em `src/core/lifecycle.ts`; a orquestração das
 ```mermaid
 stateDiagram-v2
   [*] --> VOTING: /novojogo ou auto-jogo
-  VOTING --> RSVP_OPEN: deadline, vencedor único
-  VOTING --> TIEBREAK: deadline, empate
+  VOTING --> RSVP_OPEN: um horário atinge o mínimo de votos, ou /fecharvotacao (vencedor único)
+  VOTING --> TIEBREAK: empate no fecho (votos ou /fecharvotacao)
+  VOTING --> CANCELLED: deadline (7 dias) sem horário no mínimo
   TIEBREAK --> RSVP_OPEN: admin escolhe o slot
   RSVP_OPEN --> LOCKED: rsvp_close_at, confirmados >= min
   RSVP_OPEN --> CANCELLED: rsvp_close_at, confirmados < min
@@ -33,13 +34,13 @@ Estados (`src/types.ts`):
 
 | Estado | Significado | Sai por |
 |---|---|---|
-| `VOTING` | Quadro de votação publicado; o grupo carrega nos horários | tempo (deadline) ou `/fecharvotacao` |
+| `VOTING` | Quadro de votação publicado; o grupo carrega nos horários | um horário atingir o mínimo de votos, `/fecharvotacao`, ou o deadline (7 dias → cancela) |
 | `TIEBREAK` | Votação fechada mas empatada; espera escolha do admin | ação do admin (button) |
 | `RSVP_OPEN` | Vencedor definido; o grupo confirma presença | tempo (`rsvp_close_at`) |
 | `LOCKED` | Inscrições fechadas; squad congelado | tempo (chegada do `kickoff_at`) |
 | `CHECKIN_OPEN` | Hora de jogo passou; a recolher "Cheguei" | tempo (`checkin_close_at`) |
 | `PLAYED` | Janela fechada; fantasmas atribuídos; stats finais | terminal |
-| `CANCELLED` | Cancelado por falta de gente ou por `/cancelar` | terminal |
+| `CANCELLED` | Cancelado pelo sistema (prazo da sondagem sem mínimo de votos, RSVP ou horários expirados) | terminal |
 
 `PLAYED`, `CANCELLED` e `CANCELLED_ADMIN` são terminais. Os estados ativos — os que o tick
 processa — são `VOTING`, `TIEBREAK`, `RSVP_OPEN`, `LOCKED`, `CHECKIN_OPEN` (`GAME_STATUSES_ACTIVE`
@@ -49,8 +50,10 @@ em `src/config.ts`).
 
 `runTick()` corre uma vez por minuto. Para cada jogo ativo avalia, por esta ordem:
 
-1. **Votação expirou** (`isVotingExpired`): fecha a votação, apura o vencedor e passa a
-   `RSVP_OPEN` ou `TIEBREAK`.
+1. **Votação expirou** (`isVotingExpired`): o prazo (por omissão 7 dias após a abertura) chegou
+   sem nenhum horário ter atingido o mínimo de votos — a sondagem é CANCELADA e o auto-jogo
+   relança uma nova. (Uma sondagem só "ganha" mais cedo, no voto que leva um horário ao
+   mínimo, ou por `/fecharvotacao`.)
 2. **`RSVP_OPEN`**: se `isRsvpExpired`, fecha as inscrições (`closeRsvp`) — congela o squad e
    passa a `LOCKED`, ou cancela se houver menos confirmados do que o mínimo. Se ainda não
    expirou, avalia os nudges (`processNudges`).
@@ -85,8 +88,9 @@ As janelas (`SHORT_WARN_BEFORE_CLOSE_MS`, `NONRESP_PING_BEFORE_CLOSE_MS`) estão
 ## Auto-jogo event-driven (field.pt)
 
 Em vez de um horário fixo, a sondagem do jogo seguinte abre **assim que não há jogo ativo no
-canal** — ou seja, logo que o anterior foi jogado (`PLAYED`) ou caiu por falta de gente
-(`CANCELLED`). Isto dá ao grupo o máximo de antecedência. A lógica está em
+canal** — ou seja, logo que o anterior foi jogado (`PLAYED`), caiu por falta de gente
+(`CANCELLED`) ou foi cancelado pelo admin (`CANCELLED_ADMIN`). Isto dá ao grupo o máximo de
+antecedência. A lógica está em
 `src/services/weekly.ts` (`maybeOpenNextGame`), com as guardas em `src/config.ts`.
 
 Guardas, todas verificadas antes de abrir:

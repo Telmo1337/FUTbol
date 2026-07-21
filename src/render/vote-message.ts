@@ -22,6 +22,7 @@ export function renderVoteMessage(
   voteDeadline: number,
   voters: number,
   votersBySlot: VotersBySlot,
+  minPlayers: number,
 ): string {
   return [
     M.vote.title,
@@ -31,7 +32,7 @@ export function renderVoteMessage(
     '',
     M.vote.pickHint,
     M.vote.voters(voters),
-    M.vote.closesAt(discordTs(voteDeadline)),
+    M.vote.closesAt(minPlayers, discordTs(voteDeadline)),
   ].join('\n');
 }
 

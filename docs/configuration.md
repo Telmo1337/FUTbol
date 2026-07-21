@@ -58,7 +58,8 @@ milissegundos.
 | `DEFAULT_MIN_PLAYERS` / `DEFAULT_CAP_PLAYERS` | 14 / 14 | Futebol-7: 14 em campo, por isso o jogo só confirma com 14 |
 | `RSVP_CLOSE_BEFORE_KICKOFF_MS` | 3h | As inscrições fecham 3h antes do jogo |
 | `CHECKIN_WINDOW_MS` | 5h | Quanto tempo o quadro "Cheguei" fica aberto antes de atribuir fantasmas |
-| `VOTE_LEAD_BEFORE_EARLIEST_MS` | 6h | Default do fecho da votação, se o admin não der um |
+| `VOTE_MAX_WAIT_MS` | 7 dias | Prazo da votação por omissão (abertura + 7 dias); fecha mais cedo assim que um horário atinge o mínimo de votos |
+| `MIN_VOTE_WINDOW_MS` | 3h | Mínimo aceitável para um fecho explícito dado pelo admin no `/novojogo` |
 | `SHORT_WARN_BEFORE_CLOSE_MS` | 6h | Aviso "faltam X" antes do fecho das inscrições |
 | `NONRESP_PING_BEFORE_CLOSE_MS` | 12h | Ping a quem não respondeu antes do fecho |
 
