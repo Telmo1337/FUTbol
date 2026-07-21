@@ -77,7 +77,7 @@ export const M = {
   tieResolvedNote: (label: string) => `✅ Horário escolhido: **${esc(label)}**`,
   votingExpired: '⏰ Todos os horários desta votação já passaram. Jogo cancelado — nova sondagem em breve.',
   votingNotEnoughVoters: (voters: number, min: number) =>
-    `⏰ Passou 1 semana e só **${voters}/${min}** pessoas votaram. Sondagem cancelada — nova sondagem em breve.`,
+    `⏰ A sondagem fechou sem nenhum horário com **${min}** votos (**${voters}** ${voters === 1 ? 'pessoa votou' : 'pessoas votaram'}). Sondagem cancelada — nova sondagem em breve.`,
 
   promoted: (who: string, when: string, loc: string) =>
     `${who}, abriu uma vaga — **estás dentro** para ${when}! 📍 ${esc(loc)}`,
@@ -104,7 +104,7 @@ export const M = {
     title: '🗳️ **Votação — quando jogamos?**',
     pickHint: 'Carrega no(s) horário(s) em que podes (podes escolher vários).',
     voters: (n: number) => `👥 ${n} ${n === 1 ? 'pessoa votou' : 'pessoas votaram'}`,
-    closesAt: (when: string) => `⏳ Fecha ${when}`,
+    closesAt: (min: number, when: string) => `⏳ Fecha quando um horário tiver **${min}** votos, ou ${when} no máximo.`,
     votesCount: (n: number) => `${n} ${n === 1 ? 'voto' : 'votos'}`,
     resultTitle: '✅ **Jogo marcado!**',
     tieTitle: '🗳️ **Votação encerrada — empate!**',

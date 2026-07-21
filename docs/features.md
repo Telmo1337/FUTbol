@@ -7,8 +7,9 @@ Especificação funcional do bot: o ciclo semanal, os comandos, os componentes i
 
 1. **Votação** — abre por `/novojogo` (admin) ou pelo auto-jogo. O quadro lista os horários e o
    grupo carrega no(s) dia(s) em que pode (voto por aprovação). A abertura pinga o cargo Jogador.
-2. **Dia escolhido** — no fim do prazo, a votação fecha e o bot anuncia o vencedor (ou abre um
-   desempate se houver empate).
+2. **Dia escolhido** — a votação fecha assim que um horário junta o mínimo de votos (14, por
+   omissão) e o bot anuncia o vencedor (ou abre um desempate se houver empate). Se nenhum
+   horário lá chegar, a sondagem cancela-se ao fim de 7 dias e o auto-jogo abre uma nova.
 3. **Presenças** — abrem as inscrições com os botões `Vou` / `Não vou` / `Talvez`.
 4. **Lista + lista de espera** — os primeiros até ao máximo ficam confirmados; o resto fica em
    espera e sobe automaticamente quando alguém desiste.
@@ -49,7 +50,8 @@ picker para quem não é admin do servidor; o bot ainda valida `ADMIN_IDS` por c
 
 Quatro campos: **Horários** (uma opção por linha, formato `DD/MM HH:MM`, dois ou mais),
 **Local** (opcional), **Jogadores** (mínimo-máximo, ex. `10-14`; default 14-14), e
-**Fecho da votação** (opcional; default 6h antes do horário mais cedo).
+**Fecho da votação** (opcional; default 7 dias após a abertura — fecha mais cedo se um horário
+atingir o mínimo de votos).
 
 ## Componentes interativos
 
@@ -83,9 +85,13 @@ Modais (interação tipo 5): `novojogo`, `result:<game>` (golos A/B) e `pgpricem
 ## Áreas de funcionalidade
 
 ### Votação por aprovação
-Cada jogador pode votar em vários horários. O quadro re-renderiza a contagem a cada voto. No
-fecho, ganha o slot com mais votos; em caso de empate o jogo passa a `TIEBREAK` e o admin
-escolhe.
+Cada jogador pode votar em vários horários. O quadro re-renderiza a contagem a cada voto. A
+sondagem fecha assim que um horário junta `min_players` votos (o fecho antecipado): ganha esse
+slot; em caso de empate o jogo passa a `TIEBREAK` e o admin escolhe. Sem nenhum horário no
+mínimo, a sondagem cancela-se no prazo (7 dias após a abertura, por omissão) e o auto-jogo
+relança uma nova — incluindo depois de um `/cancelar` do admin, que também não trava o
+relançamento. O `/fecharvotacao` do admin fecha já e apura o vencedor, independentemente das
+contagens.
 
 ### RSVP e lista de espera
 Os botões registam IN/OUT/MAYBE. O squad confirmado é os IN ordenados por hora de chegada

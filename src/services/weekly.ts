@@ -1,8 +1,8 @@
 // The event-driven auto-game: as soon as no game is in progress in the channel — i.e. the
-// previous one was just played (PLAYED) or fell through for lack of players (CANCELLED) — the
-// cron opens the next vote with the field's free slots, so the group never has to run
-// /novojogo by hand and always gets the maximum heads-up. Pure wiring — slot math lives in
-// core/availability.ts, the Firestore reads in services/field.ts.
+// previous one was played (PLAYED), fell through (CANCELLED) or was stopped by an admin
+// (CANCELLED_ADMIN) — the cron opens the next vote with the field's free slots, so the group
+// never has to run /novojogo by hand and always gets the maximum heads-up. Pure wiring — slot
+// math lives in core/availability.ts, the Firestore reads in services/field.ts.
 import type { Sender } from '../discord/rest';
 import type { Repo } from '../db/repo';
 import type { FieldClient } from './field';
@@ -15,8 +15,7 @@ import {
   AUTO_OPEN_START_HOUR,
   DEFAULT_CAP_PLAYERS,
   DEFAULT_MIN_PLAYERS,
-  MIN_VOTE_WINDOW_MS,
-  VOTE_LEAD_BEFORE_EARLIEST_MS,
+  VOTE_MAX_WAIT_MS,
   WEEKLY_LOCATION_NOTE,
 } from '../config';
 
@@ -49,10 +48,8 @@ export async function maybeOpenNextGame(
   try {
     if (await repo.getCurrentGame(cfg.channelId)) return; // a game is still in progress → dedup
     const last = await repo.getLastGame(cfg.channelId);
-    // An admin's explicit /cancelar is a deliberate "stop" — don't auto-reopen a poll behind their
-    // back. The next game then waits for a manual /novojogo. (A game that merely fell through for too
-    // few players stays plain CANCELLED and DOES auto-reopen, to give the group another shot.)
-    if (last?.status === 'CANCELLED_ADMIN') return;
+    // Any terminal game — played, fallen through, cancelled by the admin — is followed by a
+    // fresh poll (subject to the cooldown), so the group always has a vote open.
     if (last != null && now - last.createdAt < AUTO_OPEN_COOLDOWN_MS) return; // opened one recently → cool down
 
     const slots = await loadFreeSlots(client, { now }); // sorted ascending, capped
@@ -60,11 +57,9 @@ export async function maybeOpenNextGame(
       console.log('[auto] skip — only', slots.length, 'free slot(s) ahead');
       return;
     }
-    // Same default as /novojogo: deadline 6h before the earliest slot, but never less than
-    // MIN_VOTE_WINDOW_MS from now — a same-day earliest slot must not squeeze the group's
-    // voting window down to something nobody has a real chance to see and respond to.
-    let voteDeadline = slots[0].kickoffAt - VOTE_LEAD_BEFORE_EARLIEST_MS;
-    if (voteDeadline < now + MIN_VOTE_WINDOW_MS) voteDeadline = now + MIN_VOTE_WINDOW_MS;
+    // The poll stays open for a week: it closes early once a slot gathers `minPlayers` votes,
+    // otherwise it cancels at the deadline and a later tick relaunches with fresh availability.
+    const voteDeadline = now + VOTE_MAX_WAIT_MS;
 
     await games.createGame(api, repo, {
       chatId: cfg.channelId,

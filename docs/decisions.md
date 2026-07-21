@@ -100,3 +100,23 @@ ativadas/desativadas em produção sem redeploy de código e sem perder dados.
 sobrevivem e reaparecem quando se religa. As assistências são uma sub-flag dos golos (e são
 conjugadas com elas no ponto de uso), porque um golo é objetivo e uma assistência é uma decisão
 manual subjetiva.
+
+## ADR-9 — A sondagem fecha por votos, não por calendário
+
+**Contexto.** A sondagem fechava no deadline e apurava um vencedor, com um mínimo de votantes
+distintos e um prazo default calculado a partir do horário mais cedo. Um horário para o próprio
+dia espremia a janela de voto e deixava a data ser decidida por 1-2 pessoas que votassem cedo.
+
+**Decisão.** Inverter a lógica: a sondagem fecha **assim que um horário futuro atinge
+`min_players` votos** (fecho antecipado, decidido no próprio voto), e o prazo default passa a
+ser fixo — abertura + 7 dias (`VOTE_MAX_WAIT_MS`). O fecho por tempo deixou de apurar vencedor:
+chegado o prazo sem nenhum horário no mínimo, a sondagem cancela-se e o auto-jogo relança uma
+nova. O `/fecharvotacao` do admin continua a fechar já e a apurar o vencedor, sem mínimos.
+
+**Consequências.** Nenhuma data é decidida por uma minoria: ou um horário junta gente suficiente
+para encher o jogo, ou a sondagem morre e renasce com disponibilidade fresca. O conceito de
+"quórum de votantes distintos" desaparece, assim como `VOTE_LEAD_BEFORE_EARLIEST_MS`; o único
+limite temporal que resta é o mínimo de 3h (`MIN_VOTE_WINDOW_MS`) para um fecho explícito do
+admin. O auto-jogo deixou também de ser travado por um `/cancelar` — qualquer jogo terminal
+(`PLAYED`, `CANCELLED` ou `CANCELLED_ADMIN`) é seguido de sondagem nova, sujeito ao cooldown
+de 12h.

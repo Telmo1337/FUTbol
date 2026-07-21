@@ -1,6 +1,6 @@
 // The /novojogo modal (a popup form) and the parser for what the admin submits.
 // Replaces v1's text-block parser: the same validation, fed by structured fields.
-import { DEFAULT_CAP_PLAYERS, DEFAULT_MIN_PLAYERS, MIN_VOTE_WINDOW_MS, VOTE_LEAD_BEFORE_EARLIEST_MS } from '../config';
+import { DEFAULT_CAP_PLAYERS, DEFAULT_MIN_PLAYERS, MIN_VOTE_WINDOW_MS, VOTE_MAX_WAIT_MS } from '../config';
 import { formatWhen, parseDateTime } from '../core/time';
 import { M } from '../messages';
 
@@ -74,8 +74,9 @@ export function parseNovoJogoFields(f: NovoJogoFields, now: number): ParsedNovoJ
   if (future.length < 2) return { error: M.errNoFutureSlots };
 
   if (voteDeadline == null) {
-    voteDeadline = future[0].kickoffAt - VOTE_LEAD_BEFORE_EARLIEST_MS;
-    if (voteDeadline < now + MIN_VOTE_WINDOW_MS) voteDeadline = now + MIN_VOTE_WINDOW_MS;
+    // Default: the poll stays open for a week. It still closes early the moment one slot
+    // reaches `minPlayers` votes; an explicit deadline above overrides the default.
+    voteDeadline = now + VOTE_MAX_WAIT_MS;
   }
   const locationNote = f.local && f.local.trim() ? f.local.trim() : '(local a combinar)';
 

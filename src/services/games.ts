@@ -5,7 +5,7 @@ import type { Repo } from '../db/repo';
 import type { Game, RsvpStatus, Slot, Vote } from '../types';
 import { M } from '../messages';
 import { esc, mention } from '../util';
-import { CHECKIN_WINDOW_MS, GROUP_PING, GROUP_PING_MENTIONS, RSVP_CLOSE_BEFORE_KICKOFF_MS, VOTE_MAX_WAIT_MS } from '../config';
+import { CHECKIN_WINDOW_MS, GROUP_PING, GROUP_PING_MENTIONS, RSVP_CLOSE_BEFORE_KICKOFF_MS } from '../config';
 import { countVoters, pickWinner, tallyVotes } from '../core/voting';
 import { confirmedIds, splitSquad } from '../core/rsvp';
 import { dueNudges } from '../core/nudges';
@@ -107,7 +107,7 @@ export async function createGame(
     const slots = await repo.getSlots(gameId);
     // Ping the group once, only at "come and vote". The mention goes in `content` (it must,
     // to actually notify — a mention inside the embed wouldn't); the board is the embed.
-    const board = renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0, new Map());
+    const board = renderVoteMessage(input.locationNote, tallyVotes(slots, []), input.voteDeadline, 0, new Map(), input.minPlayers);
     const msgId = await sendBoard(api, input.chatId, board, voteComponents(gameId, slots), {
       content: GROUP_PING,
       allowedMentions: GROUP_PING_MENTIONS,
@@ -135,7 +135,21 @@ export async function handleVote(
   const game = await repo.getGame(gameId);
   if (!game || game.status !== 'VOTING') return;
   await repo.toggleVote(gameId, slotId, userId, now);
-  await rerenderVote(api, repo, game);
+
+  // Early close: the moment one FUTURE slot gathers `minPlayers` votes the poll is decided —
+  // close it right away and follow the normal flow (unique winner → RSVP; tie → admin picks).
+  // Past slots can't trigger it: they're no longer a real option anyway.
+  const slots = await repo.getSlots(gameId);
+  const votes = await repo.getVotes(gameId);
+  const decided = tallyVotes(
+    slots.filter((s) => s.kickoffAt > now),
+    votes,
+  ).some((t) => t.count >= game.minPlayers);
+  if (decided) {
+    await closeVoting(api, repo, game, now, { forced: true });
+    return;
+  }
+  await rerenderVote(api, repo, game, slots, votes);
 }
 
 /** Group voter display names by slot id (for the "who voted what" board). */
@@ -149,10 +163,8 @@ function groupVoters(rows: { slotId: number; displayName: string }[]): Map<numbe
   return m;
 }
 
-async function rerenderVote(api: Sender, repo: Repo, game: Game): Promise<void> {
+async function rerenderVote(api: Sender, repo: Repo, game: Game, slots: Slot[], votes: Vote[]): Promise<void> {
   if (!game.voteMsgId) return;
-  const slots = await repo.getSlots(game.id);
-  const votes = await repo.getVotes(game.id);
   const named = await repo.getVotesWithNames(game.id);
   const text = renderVoteMessage(
     game.locationNote,
@@ -160,6 +172,7 @@ async function rerenderVote(api: Sender, repo: Repo, game: Game): Promise<void> 
     game.voteDeadline,
     countVoters(votes),
     groupVoters(named),
+    game.minPlayers,
   );
   await editBoard(api, game.chatId, game.voteMsgId, text, voteComponents(game.id, slots), COLORS.vote);
 }
@@ -173,15 +186,15 @@ export function tieOptions(slots: Slot[], votes: Vote[], now: number): Slot[] {
   return winner ? [winner] : tied;
 }
 
-/** VOTING → RSVP_OPEN/TIEBREAK/CANCELLED once the deadline passes. `forced` is the admin's
- *  explicit /fecharvotacao override — it always closes immediately, ignoring both the voter
- *  minimum and the 1-week cap below. A time-driven (tick) call additionally requires at least
- *  `game.minPlayers` DISTINCT voters (one person voting on several days still counts once —
- *  see core/voting.ts countVoters) before locking in a date; short of that, it's a silent
- *  no-op and the tick just retries every minute past the deadline until enough people have
- *  weighed in. Without this, a slot could be decided by 1-2 early voters minutes after the
- *  poll opens. That wait isn't open-ended, though: past VOTE_MAX_WAIT_MS since the poll opened,
- *  it gives up and cancels outright rather than leaving the group stuck on a dead poll. */
+/** VOTING → RSVP_OPEN/TIEBREAK/CANCELLED. Two ways in:
+ *  - Time-driven (the tick, once `voteDeadline` passes — by default 1 week after opening, see
+ *    VOTE_MAX_WAIT_MS): the poll is CANCELLED outright. A poll only ever "wins" early, the
+ *    moment one slot gathers `minPlayers` votes (see handleVote); short of that, a week is
+ *    enough waiting — cancel (plain CANCELLED, so the cron relaunches a fresh poll) instead of
+ *    forcing a date decided by too few people.
+ *  - `forced`: the admin's explicit /fecharvotacao, or the early vote-threshold close from
+ *    handleVote. Picks the winner among the FUTURE slots right away; a tie (or zero votes)
+ *    goes to TIEBREAK for the admin to settle. */
 export async function closeVoting(api: Sender, repo: Repo, game: Game, now: number, opts?: { forced?: boolean }): Promise<void> {
   if (game.status !== 'VOTING') return;
   const slots = await repo.getSlots(game.id);
@@ -190,7 +203,6 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
 
   // Processed too late (or the poll's dates were never in the future to begin with) — every
   // slot has already passed. Plain CANCELLED (not CANCELLED_ADMIN) so the cron can relaunch.
-  // Always allowed, regardless of turnout — there's nothing left to wait for more voters on.
   if (future.length === 0) {
     if (!(await repo.transitionStatus(game.id, 'VOTING', 'CANCELLED', now))) return;
     if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
@@ -198,14 +210,12 @@ export async function closeVoting(api: Sender, repo: Repo, game: Game, now: numb
     return;
   }
 
-  const voterCount = countVoters(votes);
-  if (!opts?.forced && voterCount < game.minPlayers) {
-    // Been waiting a full week for enough votes and still short — stop waiting.
-    if (now - game.createdAt >= VOTE_MAX_WAIT_MS) {
-      if (!(await repo.transitionStatus(game.id, 'VOTING', 'CANCELLED', now))) return;
-      if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
-      await send(api, game.chatId, M.votingNotEnoughVoters(voterCount, game.minPlayers));
-    }
+  if (!opts?.forced) {
+    // Deadline reached without any slot reaching `minPlayers` votes → cancel and let the
+    // cron relaunch with fresh availability.
+    if (!(await repo.transitionStatus(game.id, 'VOTING', 'CANCELLED', now))) return;
+    if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
+    await send(api, game.chatId, M.votingNotEnoughVoters(countVoters(votes), game.minPlayers));
     return;
   }
 
@@ -411,8 +421,8 @@ export async function closeRsvp(api: Sender, repo: Repo, game: Game, now: number
 }
 
 // Admin pressed /cancelar — a deliberate stop. We persist a DISTINCT terminal status
-// (CANCELLED_ADMIN, vs the plain CANCELLED of a too-few-players fall-through) so the cron's
-// auto-open knows NOT to reopen a poll behind the admin's back; the next game waits for /novojogo.
+// (CANCELLED_ADMIN, vs the plain CANCELLED of a too-few-players fall-through) so the history
+// tells the two apart. Like any terminal game, the cron's auto-open follows it with a fresh poll.
 export async function cancelGame(api: Sender, repo: Repo, game: Game, now: number): Promise<void> {
   await repo.setStatus(game.id, 'CANCELLED_ADMIN', now);
   if (game.rsvpMsgId) await rerenderRsvp(api, repo, { ...game, status: 'CANCELLED_ADMIN' }, 'cancelled');
@@ -434,6 +444,7 @@ export async function repost(api: Sender, repo: Repo, game: Game, now: number): 
       game.voteDeadline,
       countVoters(votes),
       groupVoters(named),
+      game.minPlayers,
     );
     if (game.voteMsgId) await removeKeyboard(api, game.chatId, game.voteMsgId);
     const msgId = await sendBoard(api, game.chatId, text, voteComponents(game.id, slots), { color: COLORS.vote });

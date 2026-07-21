@@ -47,6 +47,7 @@ import { assistsEnabled, golosEnabled, pagamentosEnabled, formatEuros, esc, pars
 import { renderHistory } from '../src/render/history-message';
 import { capturePanelComponents, historyComponents, parseCb } from '../src/discord/components';
 import { parseNovoJogoFields } from '../src/discord/novojogo';
+import { MIN_VOTE_WINDOW_MS, VOTE_MAX_WAIT_MS } from '../src/config';
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -138,9 +139,11 @@ const demoBoard = renderVoteMessage(
   NOW,
   1,
   new Map([[7, ['Telmo', 'Ana']]]),
+  14,
 );
 check('vote board lists voter names under a slot', demoBoard.includes('Telmo') && demoBoard.includes('Ana'));
 check('vote board: deadline shown as a live Discord timestamp', demoBoard.includes('<t:'));
+check('vote board: footer announces the early close at minPlayers votes', demoBoard.includes('Fecha quando um horário tiver **14** votos'));
 
 // --- pure computeFreeSlots: Sunday exclusion, >=18h filter, booked-slot subtraction ---
 // NOW = Mon 2026-06-15. Field uses day 1=Mon..7=Sun (fieldDayOfSunday=7).
@@ -199,7 +202,7 @@ await games.createGame(sender, repo, {
   chatId,
   createdBy: '1',
   locationNote: 'IPVC ESTG - campo 7x7',
-  minPlayers: 2,
+  minPlayers: 3, // 3 (not 2) so the setup votes below stay under the early-close threshold
   capPlayers: 3,
   voteDeadline: NOW + DAY,
   slots: [
@@ -215,19 +218,20 @@ check('game created in VOTING', game.status === 'VOTING' && game.voteMsgId != nu
 
 const slots = await repo.getSlots(game.id);
 const [a, b] = slots;
-// users 1,2,3 vote slot B; user 1 also votes slot A → B wins clearly
+// users 1,2 vote slot B; user 1 also votes slot A → B wins clearly. B stays at 2 < minPlayers (3),
+// so the early-close threshold doesn't fire mid-setup and the explicit close below does the work.
 await games.handleVote(sender, repo, game.id, b.id, '1', NOW);
 await games.handleVote(sender, repo, game.id, b.id, '2', NOW);
-await games.handleVote(sender, repo, game.id, b.id, '3', NOW);
 await games.handleVote(sender, repo, game.id, a.id, '1', NOW);
 check('pickWinner picks slot B', pickWinner(slots, await repo.getVotes(game.id)).winner?.id === b.id);
 const namedVotes = await repo.getVotesWithNames(game.id);
 check(
   'getVotesWithNames joins votes to names',
-  namedVotes.length === 4 && namedVotes.filter((v) => v.slotId === b.id).length === 3,
+  namedVotes.length === 3 && namedVotes.filter((v) => v.slotId === b.id).length === 2,
 );
 
-await games.closeVoting(sender, repo, game, NOW + DAY + 1);
+// Forced, like the admin's /fecharvotacao: an unforced (tick-style) close always cancels now.
+await games.closeVoting(sender, repo, game, NOW + DAY + 1, { forced: true });
 game = (await repo.getGame(game.id))!;
 check('voting closed → RSVP_OPEN', game.status === 'RSVP_OPEN' && game.winningSlotId === b.id);
 
@@ -250,7 +254,7 @@ const sentBefore2 = sent.length;
 await games.handleRsvp(sender, repo, game.id, '1', 'OUT', NOW + DAY + 200);
 check('repeat dropout does not double-notify', !sent.slice(sentBefore2).some((m) => m.text.includes('abriu uma vaga')));
 
-// close RSVP → confirmed (3 >= min 2) → LOCKED
+// close RSVP → confirmed (3 >= min 3) → LOCKED
 game = (await repo.getGame(game.id))!;
 await games.closeRsvp(sender, repo, game, game.rsvpCloseAt! + 1);
 game = (await repo.getGame(game.id))!;
@@ -683,16 +687,22 @@ await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChat, createdBy: 
 const wGame2 = await repo.getCurrentGame(wChat);
 check('auto: after the cooldown, the next game opens', !!wGame2 && wGame2.status === 'VOTING');
 
-// An admin's /cancelar is a hard stop: the cron must NOT auto-open a new poll behind their back,
-// even once the cooldown is long gone. (Too-few-players CANCELLED still reopens — that's above.)
+// An admin's /cancelar is NOT a hard stop for the cron: after ANY terminal game — PLAYED,
+// CANCELLED or CANCELLED_ADMIN — the auto-open relaunches a fresh poll. The usual guards
+// still apply: the 12h cooldown blocks an immediate reopen, the daytime gate still holds.
 const wChatCancel = `auto-cancel-${Date.now()}`;
 await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChatCancel, createdBy: '1' }, dayNow);
 const cGame = (await repo.getCurrentGame(wChatCancel))!;
 await games.cancelGame(sender, repo, cGame, dayNow + 1000);
 check('cancel: /cancelar marks the game CANCELLED_ADMIN', (await repo.getGame(cGame.id))!.status === 'CANCELLED_ADMIN');
+await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChatCancel, createdBy: '1' }, dayNow + 60_000);
+check('cancel: the cooldown still blocks reopening right after /cancelar', (await repo.getCurrentGame(wChatCancel)) === null);
 const wellPastCooldown = lisbonToUtc(2026, 6, 18, 10, 0); // Thu 10:00 — a day later, daytime, cooldown gone
 await maybeOpenNextGame(sender, repo, fakeField, { channelId: wChatCancel, createdBy: '1' }, wellPastCooldown);
-check('cancel: admin cancel suppresses auto-open even past the cooldown', (await repo.getCurrentGame(wChatCancel)) === null);
+check(
+  'cancel: past the cooldown, the cron auto-opens a fresh poll even after /cancelar',
+  (await repo.getCurrentGame(wChatCancel))?.status === 'VOTING',
+);
 
 // createGame refuses a sub-2-slot poll outright (final defence): it'd be unvotable and would
 // block the auto-open via dedup. No game row should be left behind.
@@ -708,12 +718,15 @@ const pastKickoff = NOW - DAY;
 
 // 1) A tie between two FUTURE slots must win even when a PAST slot has more raw votes —
 //    this is exactly the production bug (a stale slot silently outvoting live options).
+//    minPlayers 5 keeps every slot under the early-close threshold (2 votes max each), so the
+//    explicit close below (forced, like /fecharvotacao — unforced closes now always cancel)
+//    is what settles the poll.
 const tieChat = `tie-${Date.now()}`;
 await games.createGame(sender, repo, {
   chatId: tieChat,
   createdBy: '1',
   locationNote: 'Campo',
-  minPlayers: 2,
+  minPlayers: 5,
   capPlayers: 10,
   voteDeadline: NOW + DAY,
   slots: [
@@ -731,7 +744,7 @@ await games.handleVote(sender, repo, tieGame.id, futureA.id, '21', NOW);
 await games.handleVote(sender, repo, tieGame.id, futureB.id, '30', NOW);
 await games.handleVote(sender, repo, tieGame.id, futureB.id, '31', NOW);
 
-await games.closeVoting(sender, repo, tieGame, NOW + DAY + 1);
+await games.closeVoting(sender, repo, tieGame, NOW + DAY + 1, { forced: true });
 tieGame = (await repo.getGame(tieGame.id))!;
 check(
   'closeVoting: a past slot with more votes never wins — future slots tie instead',
@@ -818,7 +831,8 @@ let autoGame = (await repo.getCurrentGame(autoChat))!;
 const [autoPast, autoFuture] = await repo.getSlots(autoGame.id);
 await games.handleVote(sender, repo, autoGame.id, autoPast.id, '1', NOW);
 await games.handleVote(sender, repo, autoGame.id, autoFuture.id, '2', NOW);
-await games.closeVoting(sender, repo, autoGame, NOW + DAY + 1);
+// Forced, like /fecharvotacao: unforced closes now always cancel, they never pick a winner.
+await games.closeVoting(sender, repo, autoGame, NOW + DAY + 1, { forced: true });
 autoGame = (await repo.getGame(autoGame.id))!;
 check(
   'closeVoting: past+future 1-1 "tie" auto-resolves to the future slot (no admin prompt)',
@@ -834,12 +848,12 @@ await games.createGame(sender, repo, {
 });
 let revertGame = (await repo.getCurrentGame(revertChat))!;
 const [revertA] = await repo.getSlots(revertGame.id);
-// 2 distinct voters (== minPlayers) so the new minimum-voter gate lets closeVoting proceed.
-await games.handleVote(sender, repo, revertGame.id, revertA.id, '1', NOW); // clear winner, no tie
-await games.handleVote(sender, repo, revertGame.id, revertA.id, '2', NOW);
+// A single vote: a clear winner, no tie — and below the minPlayers (2) early-close threshold,
+// so the poll stays open until the forced close below (the path /fecharvotacao takes).
+await games.handleVote(sender, repo, revertGame.id, revertA.id, '1', NOW);
 let threw = false;
 try {
-  await games.closeVoting(throwingSender, repo, revertGame, NOW + DAY + 1);
+  await games.closeVoting(throwingSender, repo, revertGame, NOW + DAY + 1, { forced: true });
 } catch {
   threw = true;
 }
@@ -849,7 +863,7 @@ check(
   (await repo.getGame(revertGame.id))!.status === 'VOTING',
 );
 revertGame = (await repo.getGame(revertGame.id))!;
-await games.closeVoting(sender, repo, revertGame, NOW + DAY + 2);
+await games.closeVoting(sender, repo, revertGame, NOW + DAY + 2, { forced: true });
 check('openRsvp: retrying with a working sender self-heals to RSVP_OPEN', (await repo.getGame(revertGame.id))!.status === 'RSVP_OPEN');
 
 // 7) /jogo repost on a TIEBREAK game: only still-valid options are offered, and the old
@@ -866,7 +880,8 @@ const [rpPast, rpA, rpB] = await repo.getSlots(repostGame.id);
 await games.handleVote(sender, repo, repostGame.id, rpPast.id, '1', NOW);
 await games.handleVote(sender, repo, repostGame.id, rpA.id, '2', NOW);
 await games.handleVote(sender, repo, repostGame.id, rpB.id, '3', NOW);
-await games.closeVoting(sender, repo, repostGame, NOW + DAY + 1);
+// Forced close (1-1 tie between the two future slots): unforced closes now always cancel.
+await games.closeVoting(sender, repo, repostGame, NOW + DAY + 1, { forced: true });
 repostGame = (await repo.getGame(repostGame.id))!;
 const oldTieMsgId = repostGame.tieMsgId!;
 const rpVotes = await repo.getVotes(repostGame.id);
@@ -913,8 +928,10 @@ const [traA, traB] = await repo.getSlots(tieRaceGame.id);
 await games.handleVote(sender, repo, tieRaceGame.id, traA.id, '1', NOW); // 1-1 tie
 await games.handleVote(sender, repo, tieRaceGame.id, traB.id, '2', NOW);
 const sentBeforeTieRace = sent.length;
-await games.closeVoting(sender, repo, tieRaceGame, NOW + DAY + 1); // both calls see the same stale VOTING snapshot
-await games.closeVoting(sender, repo, tieRaceGame, NOW + DAY + 1);
+// Forced, like /fecharvotacao (unforced closes now always cancel): both calls see the same
+// stale VOTING snapshot.
+await games.closeVoting(sender, repo, tieRaceGame, NOW + DAY + 1, { forced: true });
+await games.closeVoting(sender, repo, tieRaceGame, NOW + DAY + 1, { forced: true });
 check(
   'closeVoting tie branch: a stale double-call posts exactly one tie prompt',
   sent.slice(sentBeforeTieRace).filter((m) => m.text.includes('Empate na votação')).length === 1,
@@ -1060,7 +1077,8 @@ await games.createGame(sender, repo, {
 });
 let puGame = (await repo.getCurrentGame(puChat))!;
 const [puSlotA] = await repo.getSlots(puGame.id);
-// 2 distinct voters (== minPlayers) so the new minimum-voter gate lets closeVoting proceed.
+// 2 votes == minPlayers → the second vote hits the early-close threshold and closes the poll
+// itself (RSVP_OPEN, slot A wins); the explicit close below is a guarded no-op.
 await games.handleVote(sender, repo, puGame.id, puSlotA.id, '1', NOW);
 await games.handleVote(sender, repo, puGame.id, puSlotA.id, '2', NOW);
 await games.closeVoting(sender, repo, puGame, NOW + DAY + 1);
@@ -1125,16 +1143,17 @@ check('handleRsvp: a lock landing mid-write is caught by the post-write re-read'
 check('handleRsvp: no board re-render once the fresh re-read finds it already locked', edits.length === editsBeforeRace);
 check('handleRsvp: the RSVP row itself was still written (not rolled back, just not re-rendered)', (await repo.getRsvps(raceGame.id)).some((r) => r.tgUserId === '2'));
 
-// --- vote deadline: a same-day earliest slot must never squeeze the group's voting window
-// down to something unusable (the 2026-07-20 production incident: a same-day getfield.app
-// slot gave people only ~1h to vote, so a single early voter effectively decided the date). ---
-const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+// --- vote deadline: the default is always `created + VOTE_MAX_WAIT_MS` (7 days), no matter
+// how soon the earliest slot is — a long window never means a late decision, because the poll
+// closes EARLY the moment one slot reaches minPlayers votes. An explicit admin deadline is
+// still validated (must be at least MIN_VOTE_WINDOW_MS away). ---
 check('parseNovoJogoFields: an explicit deadline less than 3h away is rejected', 'error' in parseNovoJogoFields({ ...baseNovoFields, deadline: '15/06 14:00' }, NOW));
 check('parseNovoJogoFields: an explicit deadline 3h+ away is accepted', !('error' in parseNovoJogoFields({ ...baseNovoFields, deadline: '15/06 20:00' }, NOW)));
+check('MIN_VOTE_WINDOW_MS is 3h (the explicit-deadline floor)', MIN_VOTE_WINDOW_MS === 3 * 60 * 60 * 1000);
 const parsedSoonSlots = parseNovoJogoFields({ slots: '15/06 14:00\n15/06 15:00' }, NOW); // both < 3h from NOW's Lisbon 13:00
 check(
-  'parseNovoJogoFields: default deadline never less than MIN_VOTE_WINDOW_MS even for a same-day slot',
-  !('error' in parsedSoonSlots) && parsedSoonSlots.voteDeadline >= NOW + THREE_HOURS_MS,
+  'parseNovoJogoFields: default deadline is exactly now + VOTE_MAX_WAIT_MS, even for same-day slots',
+  !('error' in parsedSoonSlots) && parsedSoonSlots.voteDeadline === NOW + VOTE_MAX_WAIT_MS,
 );
 
 const soonField: FieldClient = {
@@ -1149,70 +1168,98 @@ const soonChat = `auto-soon-${Date.now()}`;
 await maybeOpenNextGame(sender, repo, soonField, { channelId: soonChat, createdBy: '1' }, dayNow);
 const soonGame = await repo.getCurrentGame(soonChat);
 check(
-  'auto-open: a same-day earliest slot still gets at least MIN_VOTE_WINDOW_MS to vote',
-  soonGame != null && soonGame.voteDeadline >= dayNow + THREE_HOURS_MS,
+  'auto-open: default deadline is exactly opened + VOTE_MAX_WAIT_MS, even with a same-day earliest slot',
+  soonGame != null && soonGame.voteDeadline === dayNow + VOTE_MAX_WAIT_MS,
 );
 
-// --- minimum-voter gate: closeVoting won't lock in a date until at least `minPlayers` DISTINCT
-// people have voted (one person voting on several days still counts once) — otherwise a date
-// can get decided by 1-2 people who happened to vote in the first few minutes. ---
-const voterGateChat = `voter-gate-${Date.now()}`;
+// --- early close by votes: the poll closes the moment ONE future slot gathers `minPlayers`
+// votes (handleVote → closeVoting { forced: true }). Short of that, an unforced (tick-style)
+// closeVoting at the deadline ALWAYS cancels — there is no winner-picking at the deadline and
+// no distinct-voter quorum anymore. ---
+
+// (a) Unforced close past the deadline cancels even when a slot has votes below minPlayers,
+//     and the cancel message names the voter count vs the minimum.
+const dlChat = `deadline-cancel-${Date.now()}`;
 await games.createGame(sender, repo, {
-  chatId: voterGateChat, createdBy: '1', locationNote: 'X', minPlayers: 14, capPlayers: 14,
+  chatId: dlChat, createdBy: '1', locationNote: 'X', minPlayers: 14, capPlayers: 14,
   voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
 });
-let vgGame = (await repo.getCurrentGame(voterGateChat))!;
-const [vgSlotA, vgSlotB] = await repo.getSlots(vgGame.id);
-for (const uid of ['1', '2']) await games.handleVote(sender, repo, vgGame.id, vgSlotA.id, uid, NOW); // 2 voters, need 14
-await games.closeVoting(sender, repo, vgGame, NOW + DAY + 1); // past deadline, tick-style (unforced)
-check('closeVoting: stays VOTING past deadline when fewer than minPlayers distinct voters', (await repo.getGame(vgGame.id))!.status === 'VOTING');
+const dlGame = (await repo.getCurrentGame(dlChat))!;
+const [dlSlotA] = await repo.getSlots(dlGame.id);
+await games.handleVote(sender, repo, dlGame.id, dlSlotA.id, '1', NOW); // 2 votes, need 14
+await games.handleVote(sender, repo, dlGame.id, dlSlotA.id, '2', NOW);
+const sentBeforeDl = sent.length;
+await games.closeVoting(sender, repo, dlGame, NOW + DAY + 1); // past deadline, tick-style (unforced)
+check(
+  'closeVoting: unforced close at the deadline cancels — no winner from votes below minPlayers',
+  (await repo.getGame(dlGame.id))!.status === 'CANCELLED',
+);
+check(
+  'closeVoting: the cancel message names the minimum and how many voted (14 vs 2)',
+  sent.slice(sentBeforeDl).some((m) => m.text.includes('sem nenhum horário com **14** votos (**2** pessoas votaram)')),
+);
 
-// user '1' also votes on the OTHER slot — still just 1 more distinct voter overall, not 2.
-await games.handleVote(sender, repo, vgGame.id, vgSlotB.id, '1', NOW);
-await games.closeVoting(sender, repo, vgGame, NOW + DAY + 2);
-check('closeVoting: a user voting across multiple days still only counts once toward the minimum', (await repo.getGame(vgGame.id))!.status === 'VOTING');
-
-// the admin's /fecharvotacao (forced) closes immediately regardless of the low voter count
-await games.closeVoting(sender, repo, vgGame, NOW + DAY + 3, { forced: true });
-check('closeVoting: forced (admin /fecharvotacao) closes immediately even below the voter minimum', (await repo.getGame(vgGame.id))!.status === 'RSVP_OPEN');
-
-// a fresh game that DOES reach the threshold closes normally (unforced) once the deadline passes
-const voterGateChat2 = `voter-gate-ok-${Date.now()}`;
+// (b) The threshold close: hitting minPlayers votes on one slot closes the poll immediately —
+//     no explicit closeVoting needed — and locks that slot as the winner.
+const earlyChat = `early-close-${Date.now()}`;
 await games.createGame(sender, repo, {
-  chatId: voterGateChat2, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 14,
-  voteDeadline: NOW + DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+  chatId: earlyChat, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 14,
+  voteDeadline: NOW + 7 * DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
 });
-const vg2Game = (await repo.getCurrentGame(voterGateChat2))!;
-const [vg2SlotA] = await repo.getSlots(vg2Game.id);
-await games.handleVote(sender, repo, vg2Game.id, vg2SlotA.id, '1', NOW);
-await games.handleVote(sender, repo, vg2Game.id, vg2SlotA.id, '2', NOW); // 2 distinct voters == minPlayers
-await games.closeVoting(sender, repo, vg2Game, NOW + DAY + 1);
-check('closeVoting: closes normally (unforced) once distinct voters reach minPlayers', (await repo.getGame(vg2Game.id))!.status === 'RSVP_OPEN');
+const ecGame = (await repo.getCurrentGame(earlyChat))!;
+const [ecSlotA, ecSlotB] = await repo.getSlots(ecGame.id);
+await games.handleVote(sender, repo, ecGame.id, ecSlotA.id, '1', NOW);
+check('early close: one vote below the threshold keeps the poll open', (await repo.getGame(ecGame.id))!.status === 'VOTING');
+await games.handleVote(sender, repo, ecGame.id, ecSlotA.id, '2', NOW); // 2 == minPlayers → decided
+const ecAfter = (await repo.getGame(ecGame.id))!;
+check(
+  'early close: hitting minPlayers votes on one slot closes the poll right away → RSVP_OPEN with that slot',
+  ecAfter.status === 'RSVP_OPEN' && ecAfter.winningSlotId === ecSlotA.id,
+);
+await games.handleVote(sender, repo, ecGame.id, ecSlotB.id, '3', NOW);
+check('early close: votes landing after the auto-close are ignored', (await repo.getVotes(ecGame.id)).length === 2);
 
-// --- 1-week fallback: past deadline AND short of the voter minimum, closeVoting waits — but
-// not forever. Once VOTE_MAX_WAIT_MS has passed since the poll opened, it gives up and cancels
-// outright (plain CANCELLED, so the cron can relaunch with fresh availability) rather than
-// force a winner from too few votes or leave the group stuck on a dead poll indefinitely. ---
-const maxWaitChat = `voter-maxwait-${Date.now()}`;
-const farSlotA = NOW + 10 * DAY; // stays in the future even a week+ from NOW
-const farSlotB = NOW + 11 * DAY;
+// Votes on PAST slots never count toward the threshold — they're no longer a real option.
+const pastOnlyChat = `past-votes-${Date.now()}`;
 await games.createGame(sender, repo, {
-  chatId: maxWaitChat, createdBy: '1', locationNote: 'X', minPlayers: 14, capPlayers: 14,
-  voteDeadline: NOW + DAY, slots: [{ kickoffAt: farSlotA, label: 'a' }, { kickoffAt: farSlotB, label: 'b' }], now: NOW,
+  chatId: pastOnlyChat, createdBy: '1', locationNote: 'X', minPlayers: 2, capPlayers: 14,
+  voteDeadline: NOW + 7 * DAY,
+  slots: [{ kickoffAt: pastKickoff, label: 'passado' }, { kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }],
+  now: NOW,
 });
-const mwGame = (await repo.getCurrentGame(maxWaitChat))!;
-const [mwSlotA] = await repo.getSlots(mwGame.id);
-await games.handleVote(sender, repo, mwGame.id, mwSlotA.id, '1', NOW); // only 1 voter, need 14
+const poGame = (await repo.getCurrentGame(pastOnlyChat))!;
+const [poPast] = await repo.getSlots(poGame.id);
+await games.handleVote(sender, repo, poGame.id, poPast.id, '1', NOW);
+await games.handleVote(sender, repo, poGame.id, poPast.id, '2', NOW); // 2 == minPlayers, but the slot is past
+check('early close: past-slot votes never trigger the threshold close', (await repo.getGame(poGame.id))!.status === 'VOTING');
 
-// Mid-week, past the normal deadline but well short of the 1-week cap: still waits.
-await games.closeVoting(sender, repo, mwGame, NOW + 3 * DAY);
-check('closeVoting: mid-week and still under the voter minimum → keeps waiting (not yet 1 week)', (await repo.getGame(mwGame.id))!.status === 'VOTING');
+// (c) Votes spread across slots with none reaching minPlayers do NOT close the poll — and
+//     toggling a vote off drops a slot back below the threshold.
+const spreadChat = `spread-votes-${Date.now()}`;
+await games.createGame(sender, repo, {
+  chatId: spreadChat, createdBy: '1', locationNote: 'X', minPlayers: 3, capPlayers: 14,
+  voteDeadline: NOW + 7 * DAY, slots: [{ kickoffAt: slotA, label: 'a' }, { kickoffAt: slotB, label: 'b' }], now: NOW,
+});
+const spGame = (await repo.getCurrentGame(spreadChat))!;
+const [spSlotA, spSlotB] = await repo.getSlots(spGame.id);
+await games.handleVote(sender, repo, spGame.id, spSlotA.id, '1', NOW); // A: 2 < 3
+await games.handleVote(sender, repo, spGame.id, spSlotA.id, '2', NOW);
+await games.handleVote(sender, repo, spGame.id, spSlotB.id, '3', NOW); // B: 1 < 3
+check('early close: votes spread across slots, none at minPlayers → poll stays open', (await repo.getGame(spGame.id))!.status === 'VOTING');
+await games.handleVote(sender, repo, spGame.id, spSlotB.id, '3', NOW); // toggle off → B back to 0
+check(
+  'early close: toggling a vote off drops the slot back down (still VOTING)',
+  (await repo.getGame(spGame.id))!.status === 'VOTING' && (await repo.getVotes(spGame.id)).filter((v) => v.slotId === spSlotB.id).length === 0,
+);
 
-// Past the 1-week cap, still short of 14 voters: gives up and cancels instead of forcing a winner.
-const sentBeforeMaxWait = sent.length;
-await games.closeVoting(sender, repo, mwGame, NOW + 8 * DAY);
-check('closeVoting: past 1 week still short of minPlayers → cancels (does not force a winner through)', (await repo.getGame(mwGame.id))!.status === 'CANCELLED');
-check('closeVoting: the cancel message names how many voted vs the minimum (1/14)', sent.slice(sentBeforeMaxWait).some((m) => m.text.includes('1/14')));
+// (d) The admin's /fecharvotacao (forced) still closes immediately and picks the top slot,
+//     even with every slot below minPlayers.
+await games.closeVoting(sender, repo, spGame, NOW + DAY + 1, { forced: true });
+const spAfter = (await repo.getGame(spGame.id))!;
+check(
+  'closeVoting: forced (admin /fecharvotacao) picks the winner even below minPlayers',
+  spAfter.status === 'RSVP_OPEN' && spAfter.winningSlotId === spSlotA.id,
+);
 
 console.log(`\n${failures === 0 ? '🎉 All checks passed' : `💥 ${failures} check(s) failed`}`);
 await proxy.dispose();
